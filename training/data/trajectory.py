@@ -298,20 +298,31 @@ def trajectorize(
         bank = BenignContextBank.from_examples(pooled)
 
     for ex in pooled:
-        # Only augment single-turn inputs; pass multi-turn through unchanged.
+        # Multi-turn inputs (e.g. synthetic escalation chains) pass through.
         if not ex.conversation.is_single_message():
             yield ex
             continue
 
         emit_original = rng.random() < cfg.preserve_original_prob
+        if ex.is_negative():
+            do_augment = bool(edgy_pool) and rng.random() < cfg.edgy_neg_pad_prob
+        else:
+            do_augment = rng.random() < cfg.benign_pad_prob
+
         if emit_original:
             yield ex
-
-        if ex.is_negative():
-            if rng.random() < cfg.edgy_neg_pad_prob and edgy_pool:
-                try:
+        if do_augment:
+            try:
+                if ex.is_negative():
                     yield pad_negative_with_edgy_context(ex, edgy_pool, bank, rng)
-                except ValueError:
-                    pass
-        elif rng.random() < cfg.benign_pad_prob:
-            yield pad_with_benign_context(ex, bank, rng)
+                else:
+                    yield pad_with_benign_context(ex, bank, rng)
+            except ValueError:
+                # Augmentation refused (e.g. multi-turn input slipped through);
+                # ensure we still emit the original below.
+                do_augment = False
+
+        # Guarantee at least one emission per input so aggregation never
+        # silently drops data even when both dice rolls miss.
+        if not emit_original and not do_augment:
+            yield ex
