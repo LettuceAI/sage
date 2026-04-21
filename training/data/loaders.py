@@ -113,17 +113,49 @@ def load_measuring_hate_speech(
 # ---------------------------------------------------------------------------
 SALAD_OBSERVED: frozenset[Category] = ALL_CATEGORIES
 
-SALAD_TAXONOMY_MAP: dict[str, Category] = {
-    "Sexual Activity and Erotic Content": Category.NSFW,
-    "Adult Content": Category.NSFW,
-    "Violence and Physical Harm": Category.VIOLENCE,
-    "Graphic Violence": Category.VIOLENCE,
-    "Hate Speech and Discrimination": Category.HATE_SPEECH,
-    "Harassment and Bullying": Category.HARASSMENT,
-    "Self-harm and Suicide": Category.SELF_HARM,
-    "Child Sexual Abuse Material": Category.SEXUAL_MINORS,
-    "Child Abuse and Exploitation": Category.GROOMING,
-}
+# Salad uses code-prefixed labels like "O1: Hate Speech" / "O62: Self-Harm".
+# Ordered substring matching — more specific categories must come first so
+# SEXUAL_MINORS-adjacent tags don't get siphoned into the generic NSFW bucket.
+# Mappings cover only labels that cleanly fit SAGE's seven categories; tags
+# outside SAGE's scope (fraud, theft, misinformation, etc.) are not mapped.
+SALAD_TAXONOMY_SUBSTR: tuple[tuple[str, Category], ...] = (
+    # Sexual content involving minors / grooming — route narrow, specific tags
+    # to GROOMING since Salad's "Child Abuse" is broad behavioral harm. We do
+    # not currently map anything to SEXUAL_MINORS from Salad; the category
+    # taxonomy doesn't carve it out specifically enough. Dedicated CSAM signal
+    # comes from NVIDIA Aegis.
+    ("child abuse", Category.GROOMING),
+    # Self-harm
+    ("self-harm", Category.SELF_HARM),
+    ("self harm", Category.SELF_HARM),
+    ("suicide", Category.SELF_HARM),
+    # NSFW (adult sexual content)
+    ("erotic", Category.NSFW),
+    ("sexual activity", Category.NSFW),
+    ("adult content", Category.NSFW),
+    ("sexual offense", Category.NSFW),
+    # Violence
+    ("violent crime", Category.VIOLENCE),
+    ("violent content", Category.VIOLENCE),
+    ("weapon", Category.VIOLENCE),
+    ("biological and chemical harm", Category.VIOLENCE),
+    # Hate speech / stereotyping / discrimination
+    ("hate speech", Category.HATE_SPEECH),
+    ("stereotyping", Category.HATE_SPEECH),
+    # Harassment-style bullying/insult/targeted meanness
+    ("harass", Category.HARASSMENT),
+    ("bully", Category.HARASSMENT),
+    ("insult", Category.HARASSMENT),
+    ("enjoying someone else's pain", Category.HARASSMENT),
+)
+
+
+def _salad_labels_for_tag(tag: str) -> Category | None:
+    lower = tag.lower()
+    for needle, category in SALAD_TAXONOMY_SUBSTR:
+        if needle in lower:
+            return category
+    return None
 
 
 def load_salad_data(subset: str = "base_set") -> Iterator[Example]:
@@ -137,10 +169,12 @@ def load_salad_data(subset: str = "base_set") -> Iterator[Example]:
         labels: dict[Category, float] = {}
         for key in ("1-category", "2-category", "3-category"):
             tag = row.get(key)
-            if tag and tag in SALAD_TAXONOMY_MAP:
-                labels[SALAD_TAXONOMY_MAP[tag]] = 1.0
+            if not tag:
+                continue
+            mapped = _salad_labels_for_tag(tag)
+            if mapped is not None:
+                labels[mapped] = 1.0
         if not labels:
-            # No mapped tag — skip rather than emit a fake all-negative.
             continue
         yield Example.from_text(
             text,
