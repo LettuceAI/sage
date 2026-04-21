@@ -19,7 +19,7 @@ from pathlib import Path
 
 from sage.conversation import Conversation
 from sage.schema import CATEGORIES, Category
-from training.data.example import Example
+from training.data.example import ALL_CATEGORIES, Example
 from training.data.trajectory import TrajectoryConfig, trajectorize
 
 
@@ -28,9 +28,17 @@ def _deserialize(row: dict) -> Example:
     labels: dict[Category, float] = {
         Category(k): float(v) for k, v in (row.get("labels") or {}).items() if v > 0
     }
+    # Back-compat: older JSONL lines lack "observed"; treat those as fully
+    # observed (matches the pre-masking default).
+    observed_raw = row.get("observed")
+    if observed_raw is None:
+        observed = ALL_CATEGORIES
+    else:
+        observed = frozenset(Category(v) for v in observed_raw)
     return Example(
         conversation=conv,
         labels=labels,
+        observed=observed,
         source=row.get("source", ""),
         meta=row.get("meta", {}),
     )
@@ -40,6 +48,7 @@ def _serialize(ex: Example) -> dict:
     out = {
         "conversation": ex.conversation.to_dict(),
         "labels": {c.value: ex.labels.get(c, 0.0) for c in CATEGORIES},
+        "observed": sorted(c.value for c in ex.observed),
         "source": ex.source,
     }
     if ex.meta:

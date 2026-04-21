@@ -205,6 +205,7 @@ def pad_with_benign_context(
     return Example(
         conversation=Conversation(turns=[*context, target]),
         labels=dict(example.labels),
+        observed=example.observed,
         source=example.source + "+benign_context",
         meta={**example.meta, "augmentation": "benign_context", "context_turns": n},
     )
@@ -246,6 +247,7 @@ def pad_negative_with_edgy_context(
     return Example(
         conversation=Conversation(turns=[*context, target]),
         labels=dict(example.labels),
+        observed=example.observed,
         source=example.source + "+edgy_context",
         meta={**example.meta, "augmentation": "edgy_context_negative", "context_turns": n},
     )

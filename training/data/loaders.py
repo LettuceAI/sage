@@ -1,6 +1,11 @@
 """Dataset loaders. Each loader yields ``Example`` objects with labels mapped
 into SAGE's canonical 7-category schema.
 
+Each source declares a module-level ``OBSERVED`` constant — the set of
+categories that source actually labels. The trainer masks loss on unobserved
+categories so sources that cover only a subset of the taxonomy do not
+contaminate the other heads with spurious negatives.
+
 Load lazily — none of these import ``datasets`` at module level so unit tests
 can import ``loaders`` without the optional training dependency.
 """
@@ -12,7 +17,7 @@ from typing import TYPE_CHECKING
 
 from sage.conversation import Role
 from sage.schema import Category
-from training.data.example import Example
+from training.data.example import ALL_CATEGORIES, Example
 
 if TYPE_CHECKING:
     from datasets import Dataset
@@ -29,11 +34,15 @@ def _load_hf(name: str, split: str, **kwargs) -> Dataset:
 #    Columns: comment_text, toxic, severe_toxic, obscene, threat, insult, identity_hate
 #    License: CC0 + CC-BY-SA-3.0
 # ---------------------------------------------------------------------------
+JIGSAW_OBSERVED: frozenset[Category] = frozenset(
+    {Category.HARASSMENT, Category.VIOLENCE, Category.HATE_SPEECH}
+)
+
+
 def load_jigsaw(split: str = "train") -> Iterator[Example]:
     ds = _load_hf("google/jigsaw_toxicity_pred", split=split, trust_remote_code=True)
     for row in ds:
         labels: dict[Category, float] = {}
-        # Harassment = any generic toxicity/insult signal
         harass = max(row["toxic"], row["severe_toxic"], row["insult"])
         if harass:
             labels[Category.HARASSMENT] = float(harass)
@@ -41,11 +50,12 @@ def load_jigsaw(split: str = "train") -> Iterator[Example]:
             labels[Category.VIOLENCE] = float(row["threat"])
         if row["identity_hate"]:
             labels[Category.HATE_SPEECH] = float(row["identity_hate"])
-        # Deliberately NOT mapping `obscene` → NSFW; obscene is mostly profanity,
-        # not explicit sexual content. Would introduce label noise.
+        # `obscene` is mostly profanity, not explicit sexual content; deliberately
+        # not mapped to NSFW. Jigsaw doesn't observe NSFW at all.
         yield Example.from_text(
             row["comment_text"],
             labels=labels,
+            observed=JIGSAW_OBSERVED,
             source="jigsaw",
         )
 
@@ -56,6 +66,11 @@ def load_jigsaw(split: str = "train") -> Iterator[Example]:
 #             identity_attack, sexual_explicit (all float ∈ [0, 1])
 #    License: CC0
 # ---------------------------------------------------------------------------
+CIVIL_COMMENTS_OBSERVED: frozenset[Category] = frozenset(
+    {Category.HARASSMENT, Category.VIOLENCE, Category.HATE_SPEECH, Category.NSFW}
+)
+
+
 def load_civil_comments(split: str = "train", min_score: float = 0.3) -> Iterator[Example]:
     ds = _load_hf("google/civil_comments", split=split)
     for row in ds:
@@ -72,6 +87,7 @@ def load_civil_comments(split: str = "train", min_score: float = 0.3) -> Iterato
         yield Example.from_text(
             row["text"],
             labels=labels,
+            observed=CIVIL_COMMENTS_OBSERVED,
             source="civil_comments",
         )
 
@@ -80,12 +96,27 @@ def load_civil_comments(split: str = "train", min_score: float = 0.3) -> Iterato
 # 3. Measuring Hate Speech (UC Berkeley)
 #    Columns: text, hate_speech_score (continuous, ≈[-8, +4])
 #    License: CC-BY-4.0
+#
+#    Annotators scored hate speech only. The other six SAGE categories are
+#    unobserved — never inferred from a low ``hate_speech_score``.
+#
+#    Middle-range scores are dropped: crowd-annotated boundary cases produce
+#    more label noise than signal for a classifier head.
 # ---------------------------------------------------------------------------
-def load_measuring_hate_speech(split: str = "train") -> Iterator[Example]:
+MHS_OBSERVED: frozenset[Category] = frozenset({Category.HATE_SPEECH})
+
+
+def load_measuring_hate_speech(
+    split: str = "train",
+    *,
+    drop_middle_low: float = -0.5,
+    drop_middle_high: float = 0.5,
+) -> Iterator[Example]:
     ds = _load_hf("ucberkeley-dlab/measuring-hate-speech", split=split)
     for row in ds:
-        # Normalize: score > 0.5 → positive hate speech; scale sigmoid-style
         score = float(row["hate_speech_score"])
+        if drop_middle_low < score < drop_middle_high:
+            continue
         if score <= -1:
             intensity = 0.0
         elif score >= 2:
@@ -98,20 +129,22 @@ def load_measuring_hate_speech(split: str = "train") -> Iterator[Example]:
         yield Example.from_text(
             row["text"],
             labels=labels,
+            observed=MHS_OBSERVED,
             source="measuring_hate_speech",
         )
 
 
 # ---------------------------------------------------------------------------
 # 4. Salad-Data (OpenSafetyLab)
-#    Hierarchical taxonomy (1/2/3 level). Prompt text in `question` or `baseq`.
 #    License: Apache 2.0
 #
-#    Mapping is the most complex of the six — refine on first real run by
-#    inspecting the taxonomy values actually present in the data.
+#    Salad is a broad safety dataset. Rows whose 1/2/3-category tag matches
+#    our taxonomy emit a positive label. Rows whose tags do not match any of
+#    our categories are skipped rather than emitted as silent all-negatives.
 # ---------------------------------------------------------------------------
+SALAD_OBSERVED: frozenset[Category] = ALL_CATEGORIES
+
 SALAD_TAXONOMY_MAP: dict[str, Category] = {
-    # level-3 labels → SAGE category. Expand after first run.
     "Sexual Activity and Erotic Content": Category.NSFW,
     "Adult Content": Category.NSFW,
     "Violence and Physical Harm": Category.VIOLENCE,
@@ -131,36 +164,38 @@ def load_salad_data(subset: str = "base_set") -> Iterator[Example]:
         if not text:
             continue
         labels: dict[Category, float] = {}
-        # Salad labels are strings at 1/2/3-category depth; map any that match.
         for key in ("1-category", "2-category", "3-category"):
             tag = row.get(key)
             if tag and tag in SALAD_TAXONOMY_MAP:
                 labels[SALAD_TAXONOMY_MAP[tag]] = 1.0
+        if not labels:
+            # No mapped tag — skip rather than emit a fake all-negative.
+            continue
         yield Example.from_text(
             text,
             labels=labels,
+            observed=SALAD_OBSERVED,
             source="salad_data",
         )
 
 
 # ---------------------------------------------------------------------------
-# 5. ProsocialDialog — HARD NEGATIVES
-#    safety_label ∈ {__casual__, __possibly_needs_caution__,
-#                    __probably_needs_caution__, __needs_caution__,
-#                    __needs_intervention__}
+# 5. ProsocialDialog — HARD NEGATIVES across all categories
 #    License: CC-BY-4.0
 #
-#    We use `response` (the prosocial reply) as a clean hard negative — these
-#    are texts about sensitive topics that are themselves not violations.
+#    Prosocial replies are, by construction, free of all seven harms — full
+#    observation across the taxonomy is appropriate here.
 # ---------------------------------------------------------------------------
+PROSOCIAL_OBSERVED: frozenset[Category] = ALL_CATEGORIES
+
+
 def load_prosocial_dialog(split: str = "train") -> Iterator[Example]:
     ds = _load_hf("allenai/prosocial-dialog", split=split)
     for row in ds:
-        # The response is prosocial → all-zero labels (hard negative).
-        # Tagged with role=CHAR since prosocial replies come from the assistant side.
         yield Example.from_text(
             row["response"],
-            labels={},  # clean negative
+            labels={},
+            observed=PROSOCIAL_OBSERVED,
             source="prosocial_dialog",
             role=Role.CHAR,
             meta={"safety_label": row.get("safety_label", "")},
@@ -168,11 +203,12 @@ def load_prosocial_dialog(split: str = "train") -> Iterator[Example]:
 
 
 # ---------------------------------------------------------------------------
-# 6. Anthropic HH-RLHF — red-team subset only
+# 6. Anthropic HH-RLHF — red-team subset
 #    License: MIT
 #
-#    The `tags` field often contains harm categories (e.g. "violence",
-#    "racism"). Use the transcript as a positive example of the tagged harm.
+#    Observed is per-row, derived from the ``tags`` field. Transcripts without
+#    any mapped harm tag are skipped (we cannot assert what kind of harm they
+#    are, and they are not reliable negatives since the dataset is harm-seeded).
 # ---------------------------------------------------------------------------
 HH_TAG_MAP: dict[str, Category] = {
     "violence": Category.VIOLENCE,
@@ -199,12 +235,108 @@ def load_hh_rlhf_redteam() -> Iterator[Example]:
             for key, category in HH_TAG_MAP.items():
                 if key in tag_lower:
                     labels[category] = 1.0
+        if not labels:
+            continue
         yield Example.from_text(
             row["transcript"],
             labels=labels,
+            observed=frozenset(labels.keys()),
             source="hh_rlhf_redteam",
             meta={"harmlessness_score": row.get("min_harmlessness_score_transcript")},
         )
+
+
+# ---------------------------------------------------------------------------
+# 7. WildGuardMix (AI2) — purpose-built safety classifier training data
+#    License: ODC-BY (commercial-permissive; AI2 Responsible Use Guidelines apply)
+#
+#    Every row is annotator-verified across harm types. ``prompt_harm_label``
+#    gives a global harm verdict; ``subcategory`` narrows the specific type.
+#    Unharmful rows are the one source we trust to provide reliable negatives
+#    across all seven categories simultaneously: if annotators marked a prompt
+#    "unharmful" they examined every kind of harm.
+# ---------------------------------------------------------------------------
+WILDGUARD_OBSERVED_UNHARMFUL: frozenset[Category] = ALL_CATEGORIES
+
+# Ordered substring matches — first hit wins. ``sexual_minors`` patterns are
+# checked before the generic ``sexual`` pattern so CSAM-adjacent rows route to
+# the right head.
+WILDGUARD_SUBCAT_MAP: tuple[tuple[str, Category], ...] = (
+    ("child sexual", Category.SEXUAL_MINORS),
+    ("csam", Category.SEXUAL_MINORS),
+    ("sexual content involving minors", Category.SEXUAL_MINORS),
+    ("minors", Category.SEXUAL_MINORS),
+    ("grooming", Category.GROOMING),
+    ("self-harm", Category.SELF_HARM),
+    ("self harm", Category.SELF_HARM),
+    ("suicide", Category.SELF_HARM),
+    ("sexual", Category.NSFW),
+    ("explicit", Category.NSFW),
+    ("violence", Category.VIOLENCE),
+    ("physical harm", Category.VIOLENCE),
+    ("weapon", Category.VIOLENCE),
+    ("harassment", Category.HARASSMENT),
+    ("bullying", Category.HARASSMENT),
+    ("abuse", Category.HARASSMENT),
+    ("hate", Category.HATE_SPEECH),
+    ("discriminat", Category.HATE_SPEECH),
+    ("stereotype", Category.HATE_SPEECH),
+)
+
+
+def _wildguard_map_subcategory(sub: str | None) -> Category | None:
+    if not sub:
+        return None
+    s = sub.lower()
+    for needle, category in WILDGUARD_SUBCAT_MAP:
+        if needle in s:
+            return category
+    return None
+
+
+def load_wildguardmix(split: str = "train") -> Iterator[Example]:
+    """Emit one Example per WildGuardMix prompt.
+
+    Policy:
+    - unharmful prompt → clean negative across all 7 categories
+    - harmful prompt, subcategory maps → positive for that single category,
+      observed = {that category} (can't assert clean on the other six)
+    - harmful prompt, subcategory unmapped → skip
+    - response-only rows (no prompt_harm_label) → skip for v1
+    """
+    subset = "wildguardtrain" if split == "train" else "wildguardtest"
+    from datasets import load_dataset
+
+    ds = load_dataset("allenai/wildguardmix", subset, split="train")
+    for row in ds:
+        prompt = row.get("prompt") or ""
+        if not prompt:
+            continue
+        harm_label = (row.get("prompt_harm_label") or "").lower()
+        subcategory = row.get("subcategory")
+
+        if harm_label == "unharmful":
+            yield Example.from_text(
+                prompt,
+                labels={},
+                observed=WILDGUARD_OBSERVED_UNHARMFUL,
+                source="wildguardmix",
+                meta={"adversarial": bool(row.get("adversarial", False))},
+            )
+        elif harm_label == "harmful":
+            mapped = _wildguard_map_subcategory(subcategory)
+            if mapped is None:
+                continue
+            yield Example.from_text(
+                prompt,
+                labels={mapped: 1.0},
+                observed=frozenset({mapped}),
+                source="wildguardmix",
+                meta={
+                    "adversarial": bool(row.get("adversarial", False)),
+                    "subcategory": subcategory,
+                },
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -217,4 +349,5 @@ LOADERS = {
     "salad_data": load_salad_data,
     "prosocial_dialog": load_prosocial_dialog,
     "hh_rlhf_redteam": load_hh_rlhf_redteam,
+    "wildguardmix": load_wildguardmix,
 }

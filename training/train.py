@@ -122,32 +122,54 @@ def evaluate(
     model.eval()
     all_targets: list[np.ndarray] = []
     all_probs: list[np.ndarray] = []
+    all_obs: list[np.ndarray] = []
     total_loss = 0.0
     n_batches = 0
 
     for batch in loader:
         batch = {k: v.to(device, non_blocking=True) for k, v in batch.items()}
         logits = model(batch["input_ids"], batch["attention_mask"], batch["pooling_mask"])
-        loss = loss_fn(logits, batch["labels"])
+        loss = loss_fn(logits, batch["labels"], observed_mask=batch.get("observed_mask"))
         total_loss += loss.item()
         n_batches += 1
         all_targets.append(batch["labels"].cpu().numpy())
         all_probs.append(torch.sigmoid(logits).cpu().numpy())
+        if "observed_mask" in batch:
+            all_obs.append(batch["observed_mask"].cpu().numpy())
 
     targets = np.concatenate(all_targets, axis=0)
     probs = np.concatenate(all_probs, axis=0)
+    obs = np.concatenate(all_obs, axis=0) if all_obs else np.ones_like(targets)
     preds = (probs >= threshold).astype(np.int32)
     targets_bin = (targets >= 0.5).astype(np.int32)
 
+    # Per-class metrics computed only over observed positions — otherwise
+    # categories that few sources label will silently score 0 F1 because
+    # their "support" includes examples the source never examined.
     per_class: dict[str, dict[str, float]] = {}
     for i, c in enumerate(CATEGORIES):
+        mask_col = obs[:, i].astype(bool)
+        if mask_col.sum() == 0:
+            per_class[c.value] = {
+                "precision": 0.0,
+                "recall": 0.0,
+                "f1": 0.0,
+                "n_positive": 0,
+                "n_observed": 0,
+            }
+            continue
+        t = targets_bin[mask_col, i]
+        p = preds[mask_col, i]
         per_class[c.value] = {
-            "precision": float(precision_score(targets_bin[:, i], preds[:, i], zero_division=0)),
-            "recall": float(recall_score(targets_bin[:, i], preds[:, i], zero_division=0)),
-            "f1": float(f1_score(targets_bin[:, i], preds[:, i], zero_division=0)),
-            "n_positive": int(targets_bin[:, i].sum()),
+            "precision": float(precision_score(t, p, zero_division=0)),
+            "recall": float(recall_score(t, p, zero_division=0)),
+            "f1": float(f1_score(t, p, zero_division=0)),
+            "n_positive": int(t.sum()),
+            "n_observed": int(mask_col.sum()),
         }
-    macro_f1 = float(np.mean([v["f1"] for v in per_class.values()]))
+    # Macro-F1 over categories that actually had any observed examples.
+    observed_f1s = [v["f1"] for v in per_class.values() if v["n_observed"] > 0]
+    macro_f1 = float(np.mean(observed_f1s)) if observed_f1s else 0.0
 
     return {
         "loss": total_loss / max(1, n_batches),
@@ -159,9 +181,11 @@ def evaluate(
 def format_eval(results: dict) -> str:
     lines = [f"  loss={results['loss']:.4f}  macro_f1={results['macro_f1']:.4f}"]
     for name, m in results["per_class"].items():
+        n_obs = m.get("n_observed")
+        obs_str = f"  obs={n_obs}" if n_obs is not None else ""
         lines.append(
             f"    {name:<15} P={m['precision']:.3f}  R={m['recall']:.3f}  "
-            f"F1={m['f1']:.3f}  n={m['n_positive']}"
+            f"F1={m['f1']:.3f}  n={m['n_positive']}{obs_str}"
         )
     return "\n".join(lines)
 
@@ -207,8 +231,12 @@ def train(args: argparse.Namespace) -> None:
 
     # Loss: pos_weight derived from training data
     label_counts = train_ds.label_counts()
-    pos_weight = compute_pos_weights(label_counts, total=len(train_ds)).to(device)
+    observed_counts = train_ds.observed_counts()
+    pos_weight = compute_pos_weights(
+        label_counts, total=len(train_ds), observed_counts=observed_counts
+    ).to(device)
     loss_fn = SageLoss(pos_weight=pos_weight).to(device)
+    print(f"[loss] observed_counts={observed_counts}")
     print(f"[loss] pos_weight={pos_weight.tolist()}")
 
     optimizer = AdamW(
@@ -225,7 +253,7 @@ def train(args: argparse.Namespace) -> None:
     num_training_steps = len(train_loader) * args.epochs // args.grad_accum
     scheduler = build_scheduler(optimizer, num_training_steps=num_training_steps)
 
-    scaler = torch.cuda.amp.GradScaler(enabled=(device.type == "cuda" and not args.no_amp))
+    scaler = torch.amp.GradScaler("cuda", enabled=(device.type == "cuda" and not args.no_amp))
 
     out_dir = Path(args.out)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -240,9 +268,16 @@ def train(args: argparse.Namespace) -> None:
         optimizer.zero_grad()
         for step, batch in enumerate(train_loader):
             batch = {k: v.to(device, non_blocking=True) for k, v in batch.items()}
-            with torch.cuda.amp.autocast(enabled=scaler.is_enabled()):
+            with torch.amp.autocast("cuda", enabled=scaler.is_enabled()):
                 logits = model(batch["input_ids"], batch["attention_mask"], batch["pooling_mask"])
-                loss = loss_fn(logits, batch["labels"]) / args.grad_accum
+                loss = (
+                    loss_fn(
+                        logits,
+                        batch["labels"],
+                        observed_mask=batch.get("observed_mask"),
+                    )
+                    / args.grad_accum
+                )
             scaler.scale(loss).backward()
 
             if (step + 1) % args.grad_accum == 0:

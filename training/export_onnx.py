@@ -52,6 +52,9 @@ def export_fp32(model: SageModel, tokenizer: SageTokenizer, out: Path, *, opset:
     out.parent.mkdir(parents=True, exist_ok=True)
     dummy = _build_dummy_inputs(tokenizer)
 
+    # Use the legacy tracer-based exporter (dynamo=False). The new dynamo
+    # exporter produces bloated external-data files for custom-code encoders
+    # like Jina v2 and is slower to run at our scale.
     torch.onnx.export(
         model,
         args=(dummy["input_ids"], dummy["attention_mask"], dummy["pooling_mask"]),
@@ -66,6 +69,7 @@ def export_fp32(model: SageModel, tokenizer: SageTokenizer, out: Path, *, opset:
             "logits": {0: "batch"},
         },
         do_constant_folding=True,
+        dynamo=False,
     )
     print(f"[export] fp32 ONNX → {out}  ({out.stat().st_size / 1e6:.1f} MB)")
 

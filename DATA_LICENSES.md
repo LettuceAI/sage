@@ -1,8 +1,25 @@
 # Training data licenses
 
-SAGE is trained on six publicly available datasets. All sources are under **commercially-permissive licenses**. This document records license terms and attribution for each.
+SAGE is trained on seven publicly available datasets. All sources are under **commercially-permissive licenses**. This document records license terms, attribution, and the per-source **observation coverage** that the training pipeline relies on for partial-signal handling.
 
-The SAGE code is licensed under Apache 2.0. The SAGE model weights — because they are trained on datasets under mixed licenses — carry the **most restrictive obligations of the constituent datasets**, which in practice amounts to: attribution (CC-BY-4.0) and inheritance of CC-BY-SA-3.0 on any redistributed underlying text. Redistributing the model weights is permitted; redistributing raw training data is not handled here.
+The SAGE code is licensed under Apache 2.0. The SAGE model weights — because they are trained on datasets under mixed licenses — carry the **most restrictive obligations of the constituent datasets**, which in practice amounts to: attribution (CC-BY-4.0), attribution under ODC-BY, and inheritance of CC-BY-SA-3.0 on any redistributed underlying text. Redistributing the model weights is permitted; redistributing raw training data is not handled here.
+
+---
+
+## Observation coverage
+
+Each source labels only a subset of SAGE's seven categories. The training pipeline records per-example observation masks so the classifier never learns a false "negative" for a category a source did not examine. The table below summarises each source's claimed coverage.
+
+| Source | Observed categories |
+|---|---|
+| Jigsaw Toxic | harassment, violence, hate_speech |
+| Civil Comments | harassment, violence, hate_speech, nsfw |
+| Measuring Hate Speech | hate_speech |
+| Salad-Data | all seven |
+| ProsocialDialog (prosocial replies) | all seven (as negatives) |
+| Anthropic HH-RLHF red-team | per-row, from tag |
+| WildGuardMix (unharmful rows) | all seven |
+| WildGuardMix (harmful rows) | the one matched subcategory |
 
 ---
 
@@ -57,7 +74,23 @@ The SAGE code is licensed under Apache 2.0. The SAGE model weights — because t
   ProsocialDialog: A Prosocial Backbone for Conversational Agents. EMNLP 2022.
   ```
 
-## 6. Anthropic HH-RLHF (red-team subset)
+## 6. WildGuardMix (AI2)
+
+- **Source:** [huggingface.co/datasets/allenai/wildguardmix](https://huggingface.co/datasets/allenai/wildguardmix)
+- **License:** ODC-BY (Open Data Commons Attribution)
+- **Additional terms:** AI2 Responsible Use Guidelines apply to downstream use
+- **Commercial use:** Allowed (with attribution)
+- **Attribution required:** Allen Institute for AI
+- **Size:** ~87k labeled prompts + ~1.7k test items
+- **Role in SAGE:** Primary source of reliable negatives across all categories. Unharmful rows are the one source that annotators checked against every harm type simultaneously. Harmful rows provide subcategory-labelled positives.
+- **Citation:**
+  ```
+  Han, S., Rao, K., Ettinger, A., Jiang, L., Lin, B. Y., Lambert, N.,
+  Choi, Y., & Dziri, N. (2024). WildGuard: Open One-Stop Moderation
+  Tools for Safety Risks, Jailbreaks, and Refusals of LLMs.
+  ```
+
+## 7. Anthropic HH-RLHF (red-team subset)
 
 - **Source:** [huggingface.co/datasets/Anthropic/hh-rlhf](https://huggingface.co/datasets/Anthropic/hh-rlhf)
 - **License:** MIT

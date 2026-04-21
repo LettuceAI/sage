@@ -86,6 +86,7 @@ def serialize(ex: Example) -> dict:
     return {
         "conversation": ex.conversation.to_dict(),
         "labels": {c.value: ex.labels.get(c, 0.0) for c in CATEGORIES},
+        "observed": sorted(c.value for c in ex.observed),
         "source": ex.source,
         **({"meta": ex.meta} if ex.meta else {}),
     }
@@ -100,8 +101,11 @@ def write_jsonl(path: Path, examples: list[Example]) -> None:
 
 def compute_stats(examples: list[Example]) -> dict:
     per_source = Counter(ex.source for ex in examples)
-    per_category_positive = Counter()
+    per_category_positive: Counter = Counter()
+    per_category_observed: Counter = Counter()
     for ex in examples:
+        for c in ex.observed:
+            per_category_observed[c.value] += 1
         for c, v in ex.labels.items():
             if v >= 0.5:
                 per_category_positive[c.value] += 1
@@ -109,6 +113,7 @@ def compute_stats(examples: list[Example]) -> dict:
         "total": len(examples),
         "per_source": dict(per_source),
         "per_category_positive": dict(per_category_positive),
+        "per_category_observed": dict(per_category_observed),
         "pure_negatives": sum(1 for ex in examples if ex.is_negative()),
     }
 

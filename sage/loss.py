@@ -1,4 +1,5 @@
-"""Multi-label loss with per-class positive weighting and focal reshaping.
+"""Multi-label loss with per-class positive weighting, focal reshaping, and
+per-example observation masking.
 
 For rare / high-cost categories (``self_harm``, ``grooming``, ``sexual_minors``)
 we want to:
@@ -6,10 +7,12 @@ we want to:
 2. Down-weight easy examples so the model keeps learning on hard cases
    (focal reshaping, γ > 0).
 
-Common categories (``nsfw``, ``violence``, ``harassment``, ``hate_speech``) do
-not need focal; plain BCE with pos_weight is fine.
-
-The :class:`SageLoss` below implements this per-class.
+The observation mask accounts for the fact that each training source only
+labels a subset of our seven categories. When a source did not examine a
+category, that dim must contribute zero loss — otherwise the model learns
+"this is negative" for every unobserved category, which is a silent false
+negative and will hurt rare-class recall. See
+:func:`SageLoss.forward` for the exact formulation.
 """
 
 from __future__ import annotations
@@ -19,7 +22,6 @@ from torch import Tensor, nn
 
 from sage.schema import CATEGORIES, Category
 
-# Default per-class gamma. 0.0 means vanilla BCE for that class.
 DEFAULT_FOCAL_GAMMA: dict[Category, float] = {
     Category.NSFW: 0.0,
     Category.VIOLENCE: 0.0,
@@ -32,13 +34,13 @@ DEFAULT_FOCAL_GAMMA: dict[Category, float] = {
 
 
 class SageLoss(nn.Module):
-    """Per-class BCE-with-logits, optionally reshaped as focal loss.
+    """Per-class BCE-with-logits, optionally reshaped as focal loss, masked by
+    per-example observation.
 
     Args:
-        pos_weight: 1-D tensor of shape ``(num_classes,)`` — positive-class
-            weights. Recommended: ``(num_neg / num_pos)`` per class, clamped
-            to a sane upper bound (e.g. 20).
-        gamma: 1-D tensor of shape ``(num_classes,)`` — focal γ per class.
+        pos_weight: 1-D tensor of shape ``(num_classes,)``. Positive-class
+            weights, typically ``num_observed_negatives / num_positives``.
+        gamma: 1-D tensor of shape ``(num_classes,)``. Focal γ per class.
             ``γ = 0`` gives vanilla weighted BCE.
     """
 
@@ -58,9 +60,21 @@ class SageLoss(nn.Module):
         self.register_buffer("pos_weight", pos_weight.float())
         self.register_buffer("gamma", gamma.float())
 
-    def forward(self, logits: Tensor, targets: Tensor) -> Tensor:
-        """``logits``: (B, C). ``targets``: (B, C) floats in [0, 1]."""
-        # Per-element BCE with pos_weight (numerically stable).
+    def forward(
+        self,
+        logits: Tensor,
+        targets: Tensor,
+        observed_mask: Tensor | None = None,
+    ) -> Tensor:
+        """Compute the masked focal-BCE loss.
+
+        Args:
+            logits: ``(B, C)`` unnormalized predictions.
+            targets: ``(B, C)`` float labels in ``[0, 1]``.
+            observed_mask: optional ``(B, C)`` 0/1 mask. 1 at ``(i, c)`` means
+                example ``i`` actually observed category ``c``. Unobserved
+                positions contribute zero loss.
+        """
         bce = torch.nn.functional.binary_cross_entropy_with_logits(
             logits,
             targets,
@@ -68,15 +82,16 @@ class SageLoss(nn.Module):
             reduction="none",
         )  # (B, C)
 
-        # Focal reshaping: (1 - p_t)^gamma where p_t is the probability of the
-        # ground-truth class.
-        # For each element, p_t = σ(logits) if target=1, else 1 - σ(logits).
         probs = torch.sigmoid(logits)
         p_t = targets * probs + (1.0 - targets) * (1.0 - probs)
         gamma = self.gamma.to(logits.device)
-        focal_factor = (1.0 - p_t).pow(gamma)  # broadcasts over batch
+        focal_factor = (1.0 - p_t).pow(gamma)
 
         loss = focal_factor * bce  # (B, C)
+        if observed_mask is not None:
+            loss = loss * observed_mask
+            denom = observed_mask.sum().clamp_min(1.0)
+            return loss.sum() / denom
         return loss.mean()
 
 
@@ -84,17 +99,23 @@ def compute_pos_weights(
     label_counts: dict[Category, int],
     total: int,
     *,
+    observed_counts: dict[Category, int] | None = None,
     max_weight: float = 20.0,
 ) -> Tensor:
-    """Compute per-class pos_weight from label positive counts.
+    """Compute per-class ``pos_weight`` from label positive counts.
 
-    ``pos_weight = num_negatives / num_positives`` per class, clamped to
-    ``max_weight`` to prevent runaway gradients on extremely rare classes.
+    When ``observed_counts`` is provided, the denominator for each category is
+    its observed count rather than the corpus total. This is important when
+    some sources did not examine a category: we want
+    ``pos_weight ≈ (observed_negatives / positives)``, not
+    ``(corpus_size / positives)``, because unobserved positions never
+    contribute to the loss.
     """
     weights: list[float] = []
     for c in CATEGORIES:
         n_pos = label_counts.get(c, 0)
-        n_neg = max(total - n_pos, 1)
+        n_obs = observed_counts.get(c, 0) if observed_counts is not None else total
+        n_neg = max(n_obs - n_pos, 1)
         if n_pos <= 0:
             w = max_weight
         else:

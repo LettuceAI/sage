@@ -42,11 +42,21 @@ class SageDataset(Dataset):
             [float(labels_dict.get(c.value, 0.0)) for c in CATEGORIES],
             dtype=torch.float32,
         )
+        # Per-example observation mask. Missing "observed" key = fully observed
+        # (back-compat with pre-masking JSONL files).
+        observed_raw = row.get("observed")
+        if observed_raw is None:
+            obs_values = [1.0] * len(CATEGORIES)
+        else:
+            observed_set = set(observed_raw)
+            obs_values = [1.0 if c.value in observed_set else 0.0 for c in CATEGORIES]
+        observed_mask = torch.tensor(obs_values, dtype=torch.float32)
         return {
             "input_ids": torch.tensor(encoded.input_ids, dtype=torch.long),
             "attention_mask": torch.tensor(encoded.attention_mask, dtype=torch.long),
             "pooling_mask": torch.tensor(encoded.pooling_mask, dtype=torch.long),
             "labels": labels,
+            "observed_mask": observed_mask,
         }
 
     def label_counts(self, threshold: float = 0.5) -> dict[Category, int]:
@@ -57,7 +67,25 @@ class SageDataset(Dataset):
                     try:
                         counts[Category(k)] += 1
                     except ValueError:
-                        pass  # skip unknown categories silently
+                        pass
+        return dict(counts)
+
+    def observed_counts(self) -> dict[Category, int]:
+        """How many examples in the dataset explicitly observe each category.
+        Used for ``pos_weight`` calibration — rarely-observed categories should
+        normalize against their *observed* count, not the corpus total."""
+        counts: Counter[Category] = Counter()
+        for row in self.rows:
+            observed_raw = row.get("observed")
+            if observed_raw is None:
+                for c in CATEGORIES:
+                    counts[c] += 1
+            else:
+                for v in observed_raw:
+                    try:
+                        counts[Category(v)] += 1
+                    except ValueError:
+                        pass
         return dict(counts)
 
 
