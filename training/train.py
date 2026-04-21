@@ -205,6 +205,21 @@ def train(args: argparse.Namespace) -> None:
         max_length=args.max_length,
         dropout=args.dropout,
     )
+
+    if args.resume_from is not None:
+        ckpt_path = Path(args.resume_from)
+        print(f"[resume] loading weights from {ckpt_path}")
+        state = torch.load(ckpt_path, map_location="cpu", weights_only=False)
+        missing, unexpected = model.load_state_dict(state["model"], strict=False)
+        if missing:
+            print(f"[resume] missing keys (fresh-init): {len(missing)}")
+        if unexpected:
+            print(f"[resume] unexpected keys (skipped): {len(unexpected)}")
+        prev_epoch = state.get("epoch", "?")
+        prev_f1 = state.get("macro_f1")
+        if prev_f1 is not None:
+            print(f"[resume] previous epoch={prev_epoch}  macro_f1={prev_f1:.4f}")
+
     model.to(device)
 
     train_ds = SageDataset(args.train, tokenizer)
@@ -357,6 +372,13 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--cpu", action="store_true", help="Force CPU even if CUDA available")
     p.add_argument("--no-amp", action="store_true", help="Disable mixed precision")
+    p.add_argument(
+        "--resume-from",
+        type=Path,
+        default=None,
+        help="Start from a saved checkpoint (loads model weights only — "
+        "LR schedule and optimizer state are fresh).",
+    )
     return p
 
 

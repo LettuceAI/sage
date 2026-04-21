@@ -290,10 +290,10 @@ def score_case(case: Case, scores: dict[Category, float]) -> tuple[bool, str]:
 
     parts = []
     if missed:
-        parts.append(
-            "missed: "
-            + ", ".join(f"{c.value}({scores[c]:.2f})" for c in sorted(missed, key=lambda x: x.value))
+        miss_str = ", ".join(
+            f"{c.value}({scores[c]:.2f})" for c in sorted(missed, key=lambda x: x.value)
         )
+        parts.append("missed: " + miss_str)
     if false_pos:
         parts.append(
             "false+: "
