@@ -1,0 +1,25 @@
+[package]
+name = "sage"
+version = "0.0.1"
+edition = "2021"
+license = "Apache-2.0"
+description = "Lightweight trajectory-aware content moderation model for chat and roleplay"
+repository = "https://github.com/LettuceAI/sage"
+readme = "README.md"
+keywords = ["nlp", "moderation", "onnx", "safety"]
+categories = ["text-processing", "api-bindings"]
+
+[dependencies]
+ort = { version = "2.0.0-rc.10", features = ["ndarray"] }
+ndarray = "0.17"
+tokenizers = { version = "0.20", default-features = false, features = ["onig"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+
+[dev-dependencies]
+anyhow = "1"
+
+[[example]]
+name = "check"
+path = "examples/check.rs"
