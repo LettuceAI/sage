@@ -127,7 +127,9 @@ SALAD_TAXONOMY_MAP: dict[str, Category] = {
 
 
 def load_salad_data(subset: str = "base_set") -> Iterator[Example]:
-    ds = _load_hf("OpenSafetyLab/Salad-Data", subset, split="train")
+    from datasets import load_dataset
+
+    ds = load_dataset("OpenSafetyLab/Salad-Data", subset, split="train")
     for row in ds:
         text = row.get("question") or row.get("baseq") or row.get("augq") or ""
         if not text:
