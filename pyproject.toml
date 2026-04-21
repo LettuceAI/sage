@@ -1,0 +1,67 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "sage-moderation"
+version = "0.0.1"
+description = "Lightweight multi-label content moderation model for chat and roleplay"
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.10"
+authors = [{ name = "LettuceAI" }]
+keywords = ["content-moderation", "nlp", "minilm", "onnx", "safety"]
+classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
+dependencies = [
+    "numpy>=1.24",
+    "onnxruntime>=1.17",
+    "tokenizers>=0.15",
+]
+
+[project.optional-dependencies]
+train = [
+    "torch>=2.2",
+    "transformers>=4.40",
+    "datasets>=2.18",
+    "accelerate>=0.29",
+    "scikit-learn>=1.4",
+    "pandas>=2.2",
+    "pyarrow>=15",
+    "tqdm>=4.66",
+]
+export = [
+    "optimum[onnxruntime]>=1.19",
+]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.4",
+    "mypy>=1.9",
+]
+
+[project.urls]
+Homepage = "https://github.com/LettuceAI/sage"
+Repository = "https://github.com/LettuceAI/sage"
+Issues = "https://github.com/LettuceAI/sage/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["sage"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
