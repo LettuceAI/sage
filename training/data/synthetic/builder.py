@@ -3,10 +3,11 @@
 The builder turns a ``Generator`` and a category request into validated
 ``Example`` objects, each tagged as synthetic and pending human review.
 """
+
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass, field
-from typing import Iterable
 
 from sage.conversation import Conversation, Role, Turn
 from sage.schema import Category
@@ -23,7 +24,7 @@ class SyntheticBatch:
     def __len__(self) -> int:
         return len(self.examples)
 
-    def extend(self, other: "SyntheticBatch") -> None:
+    def extend(self, other: SyntheticBatch) -> None:
         self.examples.extend(other.examples)
         self.errors.extend(other.errors)
 
@@ -69,9 +70,7 @@ class SyntheticBuilder:
             raise ValueError(f"polarity must be 'positive' or 'negative', got {polarity!r}")
 
         if prompt_template is None:
-            raise ValueError(
-                f"policy forbids synthetic positives for category={category}"
-            )
+            raise ValueError(f"policy forbids synthetic positives for category={category}")
 
         batch = SyntheticBatch()
         remaining = n

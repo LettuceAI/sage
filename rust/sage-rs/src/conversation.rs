@@ -22,12 +22,7 @@ impl Role {
 
 pub const CURRENT_TOKEN: &str = "[CURRENT]";
 
-pub const SPECIAL_TOKENS: [&str; 4] = [
-    "[USER]",
-    "[CHAR]",
-    "[SYSTEM]",
-    CURRENT_TOKEN,
-];
+pub const SPECIAL_TOKENS: [&str; 4] = ["[USER]", "[CHAR]", "[SYSTEM]", CURRENT_TOKEN];
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Turn {
@@ -37,13 +32,22 @@ pub struct Turn {
 
 impl Turn {
     pub fn user(text: impl Into<String>) -> Self {
-        Turn { role: Role::User, text: text.into() }
+        Turn {
+            role: Role::User,
+            text: text.into(),
+        }
     }
     pub fn char(text: impl Into<String>) -> Self {
-        Turn { role: Role::Char, text: text.into() }
+        Turn {
+            role: Role::Char,
+            text: text.into(),
+        }
     }
     pub fn system(text: impl Into<String>) -> Self {
-        Turn { role: Role::System, text: text.into() }
+        Turn {
+            role: Role::System,
+            text: text.into(),
+        }
     }
 }
 
@@ -62,7 +66,9 @@ impl Conversation {
     }
 
     pub fn from_text(text: impl Into<String>) -> Self {
-        Conversation { turns: vec![Turn::user(text)] }
+        Conversation {
+            turns: vec![Turn::user(text)],
+        }
     }
 
     pub fn target(&self) -> &Turn {

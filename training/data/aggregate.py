@@ -26,6 +26,7 @@ are emitted by the synthetic/trajectory pipelines (see
 Deduplication: exact + near-duplicate (normalized whitespace, lowercased)
 hashes across the entire pooled corpus.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -34,8 +35,8 @@ import json
 import random
 import re
 from collections import Counter
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Iterable
 
 from sage.schema import CATEGORIES
 from training.data.example import Example
@@ -119,11 +120,14 @@ def main() -> None:
         "--sources",
         nargs="+",
         default=["all"],
-        help="Which datasets to include. 'all' or any subset of: "
-        + ", ".join(LOADERS.keys()),
+        help="Which datasets to include. 'all' or any subset of: " + ", ".join(LOADERS.keys()),
     )
-    parser.add_argument("--limit-per-source", type=int, default=None,
-                        help="Cap examples per source (useful for smoke tests)")
+    parser.add_argument(
+        "--limit-per-source",
+        type=int,
+        default=None,
+        help="Cap examples per source (useful for smoke tests)",
+    )
     parser.add_argument("--val-frac", type=float, default=0.05)
     parser.add_argument("--test-frac", type=float, default=0.05)
     parser.add_argument("--seed", type=int, default=42)

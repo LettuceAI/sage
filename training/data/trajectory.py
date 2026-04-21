@@ -20,15 +20,15 @@ see ``training/data/synthetic.py`` (task 8). This module deliberately does
 This module has **no hard dependency on the ``datasets`` library** so it can
 be used in-memory during training and in unit tests.
 """
+
 from __future__ import annotations
 
 import random
+from collections.abc import Iterable, Iterator, Sequence
 from dataclasses import dataclass
-from typing import Iterable, Iterator, Sequence
 
 from sage.conversation import Conversation, Role, Turn
 from training.data.example import Example
-
 
 # ---------------------------------------------------------------------------
 # Fallback benign chit-chat. Used only when no domain-sampled bank is provided.
@@ -76,6 +76,7 @@ DEFAULT_BENIGN_BANK_CHAR: tuple[str, ...] = (
 class BenignContextBank:
     """Pool of known-clean messages, split by role. Used to synthesize
     realistic benign context turns."""
+
     user: list[str]
     char: list[str]
 
@@ -84,7 +85,7 @@ class BenignContextBank:
         return rng.choice(pool)
 
     @classmethod
-    def default(cls) -> "BenignContextBank":
+    def default(cls) -> BenignContextBank:
         return cls(
             user=list(DEFAULT_BENIGN_BANK_USER),
             char=list(DEFAULT_BENIGN_BANK_CHAR),
@@ -96,7 +97,7 @@ class BenignContextBank:
         examples: Iterable[Example],
         max_per_role: int = 5000,
         max_chars: int = 200,
-    ) -> "BenignContextBank":
+    ) -> BenignContextBank:
         """Harvest benign turns from already-loaded Examples.
 
         Only pure-negative examples (is_negative()) are eligible; texts longer
@@ -160,10 +161,12 @@ def build_benign_context(
     target of ``target_role``. Optionally prefix with a generic system prompt."""
     context: list[Turn] = []
     if with_system_prompt:
-        context.append(Turn(
-            role=Role.SYSTEM,
-            text="You are a friendly AI assistant.",
-        ))
+        context.append(
+            Turn(
+                role=Role.SYSTEM,
+                text="You are a friendly AI assistant.",
+            )
+        )
     roles = _alternating_roles_ending_before(target_role, n_turns)
     for role in roles:
         context.append(Turn(role=role, text=bank.sample(role, rng)))
@@ -308,16 +311,5 @@ def trajectorize(
                     yield pad_negative_with_edgy_context(ex, edgy_pool, bank, rng)
                 except ValueError:
                     pass
-        else:
-            if rng.random() < cfg.benign_pad_prob:
-                yield pad_with_benign_context(ex, bank, rng)
-
-        # If we haven't emitted anything for this input, emit the original
-        # so no data is silently lost.
-        # (Handled by always emitting at least the original when sampling
-        #  decisions skip augmentation — re-check below.)
-    # Note: the generator above already yields at least the original if
-    # emit_original fired; otherwise at least the augmented variant. If both
-    # dice rolls miss, we rely on the next training epoch's reshuffle for
-    # coverage. For small datasets, raise preserve_original_prob to ensure
-    # nothing is dropped.
+        elif rng.random() < cfg.benign_pad_prob:
+            yield pad_with_benign_context(ex, bank, rng)

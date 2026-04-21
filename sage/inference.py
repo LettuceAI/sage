@@ -4,11 +4,11 @@ Loads an ONNX model (fp32 or INT8) + a tokenizer and exposes a friendly
 ``check()`` method that accepts either a string or a list of ``{role, text}``
 dicts, matching the public API in the README.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Union
 
 import numpy as np
 
@@ -16,9 +16,8 @@ from sage.conversation import Conversation, Role, Turn
 from sage.schema import CATEGORIES, DEFAULT_THRESHOLDS, Category
 from sage.tokenizer import SageTokenizer
 
-
-MessageLike = Union[str, dict]
-ConversationInput = Union[str, list[MessageLike]]
+MessageLike = str | dict
+ConversationInput = str | list[MessageLike]
 
 
 @dataclass
@@ -56,7 +55,9 @@ class Sage:
 
         self.tokenizer = tokenizer
         self._thresholds: dict[Category, float] = {
-            c: (thresholds[c] if thresholds and c in thresholds else DEFAULT_THRESHOLDS[c].threshold)
+            c: (
+                thresholds[c] if thresholds and c in thresholds else DEFAULT_THRESHOLDS[c].threshold
+            )
             for c in CATEGORIES
         }
         self._session = ort.InferenceSession(
@@ -74,7 +75,7 @@ class Sage:
         max_length: int = 1024,
         thresholds: dict[Category, float] | None = None,
         providers: list[str] | None = None,
-    ) -> "Sage":
+    ) -> Sage:
         tokenizer = SageTokenizer(base_tokenizer_name=base_tokenizer, max_length=max_length)
         return cls(onnx_path, tokenizer, thresholds=thresholds, providers=providers)
 

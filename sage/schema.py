@@ -3,6 +3,7 @@
 All training data — regardless of source — is mapped into this schema.
 Per-dataset mappings live in ``training/data/mappings.py``.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -32,6 +33,7 @@ class CategoryConfig:
     ``threshold`` is the score above which ``flagged`` flips to True.
     Rare/high-cost categories use lower thresholds.
     """
+
     threshold: float
     description: str
 

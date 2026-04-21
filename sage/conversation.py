@@ -7,11 +7,12 @@ role.
 
 See ``docs/architecture.md`` §1 for the full input format spec.
 """
+
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 from enum import Enum
-from typing import Iterable
 
 
 class Role(str, Enum):
@@ -45,11 +46,12 @@ class Turn:
     ``[CURRENT]`` marker is applied at render time to the final turn regardless
     of role, so the natural role is preserved here for filtering and analytics.
     """
+
     role: Role
     text: str
 
     @staticmethod
-    def from_dict(d: dict) -> "Turn":
+    def from_dict(d: dict) -> Turn:
         return Turn(role=Role(d["role"]), text=d["text"])
 
     def to_dict(self) -> dict:
@@ -59,6 +61,7 @@ class Turn:
 @dataclass(slots=True)
 class Conversation:
     """Ordered list of turns. The last turn is always the classification target."""
+
     turns: list[Turn]
 
     def __post_init__(self) -> None:
@@ -77,20 +80,20 @@ class Conversation:
         return len(self.turns) == 1
 
     @classmethod
-    def from_text(cls, text: str, role: Role = Role.USER) -> "Conversation":
+    def from_text(cls, text: str, role: Role = Role.USER) -> Conversation:
         """Wrap a single message as a 1-turn conversation. Preserves backward
         compatibility with message-level data sources."""
         return cls(turns=[Turn(role=role, text=text)])
 
     @classmethod
-    def from_turns(cls, turns: Iterable[dict | Turn]) -> "Conversation":
+    def from_turns(cls, turns: Iterable[dict | Turn]) -> Conversation:
         return cls(turns=[t if isinstance(t, Turn) else Turn.from_dict(t) for t in turns])
 
     def to_dict(self) -> dict:
         return {"turns": [t.to_dict() for t in self.turns]}
 
     @classmethod
-    def from_dict(cls, d: dict) -> "Conversation":
+    def from_dict(cls, d: dict) -> Conversation:
         return cls.from_turns(d["turns"])
 
 

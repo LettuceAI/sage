@@ -9,6 +9,7 @@ Usage::
         --out-int8 artifacts/sage-v1-int8.onnx \
         --opset 17
 """
+
 from __future__ import annotations
 
 import argparse
@@ -18,9 +19,8 @@ import numpy as np
 import torch
 
 from sage.conversation import Conversation
-from sage.model import SageConfig, SageModel, build_model_and_tokenizer
+from sage.model import SageModel, build_model_and_tokenizer
 from sage.tokenizer import SageTokenizer
-
 
 OPSET = 17
 INPUT_NAMES = ["input_ids", "attention_mask", "pooling_mask"]
@@ -31,7 +31,9 @@ def _load_checkpoint(
     checkpoint: Path, base_model: str, max_length: int, dropout: float
 ) -> tuple[SageModel, SageTokenizer]:
     model, tokenizer = build_model_and_tokenizer(
-        base_model_name=base_model, max_length=max_length, dropout=dropout,
+        base_model_name=base_model,
+        max_length=max_length,
+        dropout=dropout,
     )
     state = torch.load(checkpoint, map_location="cpu", weights_only=False)
     model.load_state_dict(state["model"])
@@ -39,16 +41,11 @@ def _load_checkpoint(
     return model, tokenizer
 
 
-def _build_dummy_inputs(
-    tokenizer: SageTokenizer, batch: int = 2
-) -> dict[str, torch.Tensor]:
+def _build_dummy_inputs(tokenizer: SageTokenizer, batch: int = 2) -> dict[str, torch.Tensor]:
     """Synthesize a small batch of encoded conversations for tracing."""
     convs = [Conversation.from_text(f"sample text {i}") for i in range(batch)]
     encoded = tokenizer.encode_batch(convs)
-    return {
-        k: torch.tensor(v, dtype=torch.long)
-        for k, v in encoded.items()
-    }
+    return {k: torch.tensor(v, dtype=torch.long) for k, v in encoded.items()}
 
 
 def export_fp32(model: SageModel, tokenizer: SageTokenizer, out: Path, *, opset: int) -> None:
@@ -75,6 +72,7 @@ def export_fp32(model: SageModel, tokenizer: SageTokenizer, out: Path, *, opset:
 
 def quantize_int8(fp32_path: Path, int8_path: Path) -> None:
     from onnxruntime.quantization import QuantType, quantize_dynamic
+
     int8_path.parent.mkdir(parents=True, exist_ok=True)
     quantize_dynamic(
         model_input=str(fp32_path),
@@ -110,9 +108,7 @@ def parity_check(
     max_abs_diff = float(np.max(np.abs(ref_np - out)))
     print(f"[parity {label}] max|Δ| = {max_abs_diff:.5f}  (atol={atol})")
     if max_abs_diff > atol:
-        raise SystemExit(
-            f"parity check FAILED: max diff {max_abs_diff:.5f} > atol {atol}"
-        )
+        raise SystemExit(f"parity check FAILED: max diff {max_abs_diff:.5f} > atol {atol}")
     print(f"[parity {label}] OK")
 
 
@@ -131,7 +127,10 @@ def main() -> None:
     args = ap.parse_args()
 
     model, tokenizer = _load_checkpoint(
-        args.checkpoint, args.base_model, args.max_length, args.dropout,
+        args.checkpoint,
+        args.base_model,
+        args.max_length,
+        args.dropout,
     )
 
     export_fp32(model, tokenizer, args.out_fp32, opset=args.opset)

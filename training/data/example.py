@@ -18,6 +18,7 @@ class Example:
     are treated as 0 (not-flagged) by the trainer. Use ``to_vector`` for the
     dense 7-d target used by ``BCEWithLogitsLoss``.
     """
+
     conversation: Conversation
     labels: dict[Category, float] = field(default_factory=dict)
     source: str = ""
@@ -34,7 +35,7 @@ class Example:
         source: str = "",
         role: Role = Role.USER,
         meta: dict | None = None,
-    ) -> "Example":
+    ) -> Example:
         """Wrap a single message as a 1-turn example. Used by all message-level
         dataset loaders (Jigsaw, Civil Comments, etc.)."""
         return cls(

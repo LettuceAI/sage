@@ -3,13 +3,10 @@
 Avoids downloading the Jina v2 tokenizer during tests — we construct a tiny
 tokenizer with just the behaviors SageTokenizer actually depends on.
 """
+
 from dataclasses import dataclass, field
 
-import pytest
-
 from sage.conversation import (
-    CURRENT_TOKEN,
-    ROLE_TOKEN,
     SPECIAL_TOKENS,
     Conversation,
     Role,
@@ -24,9 +21,15 @@ class StubTokenizer:
     for the methods SageTokenizer uses: encode, convert_tokens_to_ids,
     add_special_tokens, __len__, cls_token_id, sep_token_id, pad_token_id,
     unk_token_id."""
-    _vocab: dict[str, int] = field(default_factory=lambda: {
-        "[PAD]": 0, "[UNK]": 1, "[CLS]": 2, "[SEP]": 3,
-    })
+
+    _vocab: dict[str, int] = field(
+        default_factory=lambda: {
+            "[PAD]": 0,
+            "[UNK]": 1,
+            "[CLS]": 2,
+            "[SEP]": 3,
+        }
+    )
     cls_token_id: int = 2
     sep_token_id: int = 3
     pad_token_id: int = 0
@@ -92,11 +95,13 @@ def test_encode_single_message_has_correct_structure():
 
 def test_encode_multi_turn_pools_only_current():
     tok = _make_tokenizer(max_length=64)
-    conv = Conversation(turns=[
-        Turn(role=Role.USER, text="hey"),
-        Turn(role=Role.CHAR, text="hi there"),
-        Turn(role=Role.USER, text="target message"),
-    ])
+    conv = Conversation(
+        turns=[
+            Turn(role=Role.USER, text="hey"),
+            Turn(role=Role.CHAR, text="hi there"),
+            Turn(role=Role.USER, text="target message"),
+        ]
+    )
     enc = tok.encode(conv)
 
     # At least one pooled position
@@ -117,13 +122,15 @@ def test_truncation_drops_oldest_context_first():
     tok = _make_tokenizer(max_length=12)
     # Four context turns + target = 5 turns total. The oldest context
     # (non-system) should be dropped first.
-    conv = Conversation(turns=[
-        Turn(role=Role.USER, text="one two three"),       # should be dropped
-        Turn(role=Role.CHAR, text="four"),
-        Turn(role=Role.USER, text="five"),
-        Turn(role=Role.CHAR, text="six"),
-        Turn(role=Role.USER, text="target"),
-    ])
+    conv = Conversation(
+        turns=[
+            Turn(role=Role.USER, text="one two three"),  # should be dropped
+            Turn(role=Role.CHAR, text="four"),
+            Turn(role=Role.USER, text="five"),
+            Turn(role=Role.CHAR, text="six"),
+            Turn(role=Role.USER, text="target"),
+        ]
+    )
     enc = tok.encode(conv)
     # Target must always be present
     current_positions = [i for i, tid in enumerate(enc.input_ids) if tid == tok.current_id]
@@ -134,12 +141,14 @@ def test_truncation_drops_oldest_context_first():
 
 def test_pinned_system_turn_is_preserved():
     tok = _make_tokenizer(max_length=20)
-    conv = Conversation(turns=[
-        Turn(role=Role.SYSTEM, text="system prompt"),
-        Turn(role=Role.USER, text="a"),
-        Turn(role=Role.CHAR, text="b"),
-        Turn(role=Role.USER, text="target"),
-    ])
+    conv = Conversation(
+        turns=[
+            Turn(role=Role.SYSTEM, text="system prompt"),
+            Turn(role=Role.USER, text="a"),
+            Turn(role=Role.CHAR, text="b"),
+            Turn(role=Role.USER, text="target"),
+        ]
+    )
     enc = tok.encode(conv)
     system_id = tok.role_id[Role.SYSTEM]
     assert system_id in enc.input_ids
@@ -162,7 +171,7 @@ def test_attention_mask_matches_non_pad_length():
     enc = tok.encode(conv)
     assert sum(enc.attention_mask) == enc.length
     # Padded positions
-    for i, (a, tid) in enumerate(zip(enc.attention_mask, enc.input_ids)):
+    for i, (a, tid) in enumerate(zip(enc.attention_mask, enc.input_ids, strict=True)):
         if i >= enc.length:
             assert a == 0
             assert tid == tok.pad_id

@@ -17,6 +17,7 @@ Truncation follows the policy in ``docs/architecture.md`` §1.5:
 4. ``[SYSTEM]`` turn at position 0 is pinned unless keeping it forces the
    target to be truncated.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -27,9 +28,7 @@ from sage.conversation import (
     SPECIAL_TOKENS,
     Conversation,
     Role,
-    Turn,
 )
-
 
 DEFAULT_BASE_TOKENIZER = "jinaai/jina-embeddings-v2-base-en"
 DEFAULT_MAX_LENGTH = 1024
@@ -48,7 +47,7 @@ class EncodedConversation:
         assert len(self.pooling_mask) == n, "pooling_mask length mismatch"
         assert any(self.pooling_mask), "pooling_mask must have at least one 1"
         # pooling_mask must be a subset of attention_mask
-        for a, p in zip(self.attention_mask, self.pooling_mask):
+        for a, p in zip(self.attention_mask, self.pooling_mask, strict=True):
             if p and not a:
                 raise AssertionError("pooling_mask includes a padding position")
 
@@ -68,6 +67,7 @@ class SageTokenizer:
             self.tokenizer = tokenizer
         else:
             from transformers import AutoTokenizer  # local import keeps tests light
+
             self.tokenizer = AutoTokenizer.from_pretrained(
                 base_tokenizer_name, trust_remote_code=True
             )
@@ -125,10 +125,7 @@ class SageTokenizer:
 
         remaining = budget - target_cost
         # Determine if a pinned SYSTEM turn exists at position 0.
-        has_pinned_system = (
-            conversation.context
-            and conversation.context[0].role is Role.SYSTEM
-        )
+        has_pinned_system = conversation.context and conversation.context[0].role is Role.SYSTEM
 
         # Walk context from most-recent back to oldest, keeping turns that fit.
         # We'll reverse at the end to restore conversation order.
@@ -137,7 +134,6 @@ class SageTokenizer:
         # Reserve space for the pinned system turn (if any) so we don't drop it unless needed.
         reserved_system = 0
         if has_pinned_system:
-            sys_turn = conversation.context[0]
             sys_cost = 1 + len(ctx_turn_ids[0]) + 1
             if sys_cost <= remaining:
                 reserved_system = sys_cost

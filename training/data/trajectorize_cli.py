@@ -9,12 +9,13 @@ Usage::
 Designed to be run *per split* (train/val/test separately) so that synthetic
 augmentation can never leak the same target across splits.
 """
+
 from __future__ import annotations
 
 import argparse
 import json
+from collections.abc import Iterator
 from pathlib import Path
-from typing import Iterator
 
 from sage.conversation import Conversation
 from sage.schema import CATEGORIES, Category

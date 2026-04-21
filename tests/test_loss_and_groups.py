@@ -48,7 +48,7 @@ def test_default_gamma_aligns_with_schema_order():
     # The list version that SageLoss builds internally must align with CATEGORIES.
     gammas = [DEFAULT_FOCAL_GAMMA[c] for c in CATEGORIES]
     # Rare-class positions should be > 0
-    for c, g in zip(CATEGORIES, gammas):
+    for c, g in zip(CATEGORIES, gammas, strict=True):
         if c in (Category.SELF_HARM, Category.GROOMING, Category.SEXUAL_MINORS):
             assert g > 0
         else:

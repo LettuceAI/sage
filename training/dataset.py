@@ -4,6 +4,7 @@
 Cheap memory footprint: only the parsed JSON rows are kept in RAM; tokenization
 runs per batch. Use ``num_workers>=2`` on the DataLoader to parallelize encode.
 """
+
 from __future__ import annotations
 
 import json

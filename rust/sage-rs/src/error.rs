@@ -32,9 +32,13 @@ pub enum SageError {
 // leaking upstream types in the public API — the underlying errors are stable
 // enough for us to just record their display form.
 impl From<ort::Error> for SageError {
-    fn from(e: ort::Error) -> Self { SageError::Ort(e.to_string()) }
+    fn from(e: ort::Error) -> Self {
+        SageError::Ort(e.to_string())
+    }
 }
 
 impl From<tokenizers::Error> for SageError {
-    fn from(e: tokenizers::Error) -> Self { SageError::Tokenizer(e.to_string()) }
+    fn from(e: tokenizers::Error) -> Self {
+        SageError::Tokenizer(e.to_string())
+    }
 }

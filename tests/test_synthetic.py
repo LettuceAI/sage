@@ -15,7 +15,7 @@ def test_lenient_parses_bare_array():
 
 
 def test_lenient_strips_markdown_fences():
-    text = "```json\n[{\"x\": 1}]\n```"
+    text = '```json\n[{"x": 1}]\n```'
     assert json_loads_lenient(text) == [{"x": 1}]
 
 
@@ -34,9 +34,7 @@ def test_lenient_raises_when_no_json():
 # ---------------------------------------------------------------------------
 def _canned_response(turns_list):
     """Produce a JSON-array-of-conversations response for the mock generator."""
-    return json.dumps([
-        {"turns": turns, "notes": "test pattern"} for turns in turns_list
-    ])
+    return json.dumps([{"turns": turns, "notes": "test pattern"} for turns in turns_list])
 
 
 def test_builder_parses_turns_into_examples_with_correct_labels():
@@ -96,13 +94,13 @@ def test_builder_collects_errors_when_generator_returns_garbage():
 
 def test_builder_batches_multiple_requests():
     # Two batches of 2 each → total 4 examples.
-    turns_batch = [
-        [{"role": "user", "text": f"turn-{i}"}] for i in range(2)
-    ]
-    gen = MockGenerator(responses=[
-        _canned_response(turns_batch),
-        _canned_response(turns_batch),
-    ])
+    turns_batch = [[{"role": "user", "text": f"turn-{i}"}] for i in range(2)]
+    gen = MockGenerator(
+        responses=[
+            _canned_response(turns_batch),
+            _canned_response(turns_batch),
+        ]
+    )
     builder = SyntheticBuilder(generator=gen)
     batch = builder.build("self_harm", "negative", n=4, batch_size=2)
     assert len(batch) == 4

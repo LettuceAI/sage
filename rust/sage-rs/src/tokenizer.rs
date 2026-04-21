@@ -167,15 +167,19 @@ impl SageTokenizer {
         // 4. Pad to max_length.
         if input_ids.len() < self.max_length {
             let pad = self.max_length - input_ids.len();
-            input_ids.extend(std::iter::repeat(self.pad_id as i64).take(pad));
-            attention_mask.extend(std::iter::repeat(0).take(pad));
-            pooling_mask.extend(std::iter::repeat(0).take(pad));
+            input_ids.extend(std::iter::repeat_n(self.pad_id as i64, pad));
+            attention_mask.extend(std::iter::repeat_n(0, pad));
+            pooling_mask.extend(std::iter::repeat_n(0, pad));
         }
 
         debug_assert_eq!(input_ids.len(), self.max_length);
         debug_assert_eq!(attention_mask.len(), self.max_length);
         debug_assert_eq!(pooling_mask.len(), self.max_length);
 
-        Ok(Encoded { input_ids, attention_mask, pooling_mask })
+        Ok(Encoded {
+            input_ids,
+            attention_mask,
+            pooling_mask,
+        })
     }
 }

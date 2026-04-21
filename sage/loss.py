@@ -11,13 +11,13 @@ not need focal; plain BCE with pos_weight is fine.
 
 The :class:`SageLoss` below implements this per-class.
 """
+
 from __future__ import annotations
 
 import torch
 from torch import Tensor, nn
 
 from sage.schema import CATEGORIES, Category
-
 
 # Default per-class gamma. 0.0 means vanilla BCE for that class.
 DEFAULT_FOCAL_GAMMA: dict[Category, float] = {
@@ -62,7 +62,8 @@ class SageLoss(nn.Module):
         """``logits``: (B, C). ``targets``: (B, C) floats in [0, 1]."""
         # Per-element BCE with pos_weight (numerically stable).
         bce = torch.nn.functional.binary_cross_entropy_with_logits(
-            logits, targets,
+            logits,
+            targets,
             pos_weight=self.pos_weight,
             reduction="none",
         )  # (B, C)

@@ -2,11 +2,12 @@
 
 The ONNX runtime path is integration-tested separately with a real checkpoint.
 """
+
+import numpy as np
 import pytest
 
 from sage.conversation import Conversation, Role, Turn
 from sage.inference import _coerce_conversation, _sigmoid
-import numpy as np
 
 
 def test_coerce_from_string():
@@ -18,22 +19,26 @@ def test_coerce_from_string():
 
 
 def test_coerce_from_dicts():
-    c = _coerce_conversation([
-        {"role": "system", "text": "You are a tutor."},
-        {"role": "user", "text": "Hey"},
-        {"role": "char", "text": "Hello"},
-        {"role": "user", "text": "target"},
-    ])
+    c = _coerce_conversation(
+        [
+            {"role": "system", "text": "You are a tutor."},
+            {"role": "user", "text": "Hey"},
+            {"role": "char", "text": "Hello"},
+            {"role": "user", "text": "target"},
+        ]
+    )
     assert len(c.turns) == 4
     assert c.target.text == "target"
     assert c.turns[0].role is Role.SYSTEM
 
 
 def test_coerce_from_turn_objects():
-    c = _coerce_conversation([
-        Turn(role=Role.USER, text="one"),
-        Turn(role=Role.CHAR, text="two"),
-    ])
+    c = _coerce_conversation(
+        [
+            Turn(role=Role.USER, text="one"),
+            Turn(role=Role.CHAR, text="two"),
+        ]
+    )
     assert c.target.text == "two"
 
 

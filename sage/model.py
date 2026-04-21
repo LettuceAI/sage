@@ -7,6 +7,7 @@ Param budget:
     +   ~5K classifier head (768 → 7 + bias)
     ≈ ~137M total.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -17,7 +18,6 @@ from torch import Tensor, nn
 from sage.conversation import CURRENT_TOKEN, ROLE_TOKEN, Role
 from sage.schema import NUM_CATEGORIES
 from sage.tokenizer import DEFAULT_BASE_TOKENIZER, SageTokenizer
-
 
 # Anchor words whose embeddings are averaged to initialize each new role
 # token. Empirically-chosen semantic neighbours.
@@ -45,9 +45,8 @@ class SageModel(nn.Module):
 
         if encoder is None:
             from transformers import AutoModel
-            encoder = AutoModel.from_pretrained(
-                self.config.base_model_name, trust_remote_code=True
-            )
+
+            encoder = AutoModel.from_pretrained(self.config.base_model_name, trust_remote_code=True)
         self.encoder = encoder
 
         self.dropout = nn.Dropout(self.config.dropout)

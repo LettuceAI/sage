@@ -11,6 +11,7 @@ Usage::
 Defaults match ``docs/architecture.md`` §5 (layer-wise LR decay, fp16 mixed
 precision, BCE + focal on rare classes, early stop on macro-F1).
 """
+
 from __future__ import annotations
 
 import argparse
@@ -25,9 +26,8 @@ from torch.optim import AdamW
 from torch.utils.data import DataLoader
 
 from sage.loss import SageLoss, compute_pos_weights
-from sage.model import SageConfig, SageModel, build_model_and_tokenizer
+from sage.model import SageModel, build_model_and_tokenizer
 from sage.schema import CATEGORIES
-from sage.tokenizer import SageTokenizer
 from training.dataset import SageDataset, collate
 
 
@@ -142,12 +142,8 @@ def evaluate(
     per_class: dict[str, dict[str, float]] = {}
     for i, c in enumerate(CATEGORIES):
         per_class[c.value] = {
-            "precision": float(
-                precision_score(targets_bin[:, i], preds[:, i], zero_division=0)
-            ),
-            "recall": float(
-                recall_score(targets_bin[:, i], preds[:, i], zero_division=0)
-            ),
+            "precision": float(precision_score(targets_bin[:, i], preds[:, i], zero_division=0)),
+            "recall": float(recall_score(targets_bin[:, i], preds[:, i], zero_division=0)),
             "f1": float(f1_score(targets_bin[:, i], preds[:, i], zero_division=0)),
             "n_positive": int(targets_bin[:, i].sum()),
         }
@@ -218,8 +214,10 @@ def train(args: argparse.Namespace) -> None:
     optimizer = AdamW(
         build_param_groups(
             model,
-            lr_head=args.lr_head, lr_top=args.lr_top,
-            lr_mid=args.lr_mid, lr_bot=args.lr_bot,
+            lr_head=args.lr_head,
+            lr_top=args.lr_top,
+            lr_mid=args.lr_mid,
+            lr_bot=args.lr_bot,
             weight_decay=args.weight_decay,
         ),
     )
@@ -260,11 +258,15 @@ def train(args: argparse.Namespace) -> None:
             if (step + 1) % args.log_every == 0:
                 avg = epoch_loss / (step + 1)
                 lr = scheduler.get_last_lr()[0]
-                print(f"  epoch {epoch}  step {step + 1}/{len(train_loader)}  "
-                      f"loss={avg:.4f}  lr={lr:.2e}")
+                print(
+                    f"  epoch {epoch}  step {step + 1}/{len(train_loader)}  "
+                    f"loss={avg:.4f}  lr={lr:.2e}"
+                )
 
-        print(f"[epoch {epoch}] took {time.time() - t0:.1f}s  "
-              f"avg_loss={epoch_loss / max(1, len(train_loader)):.4f}")
+        print(
+            f"[epoch {epoch}] took {time.time() - t0:.1f}s  "
+            f"avg_loss={epoch_loss / max(1, len(train_loader)):.4f}"
+        )
         eval_results = evaluate(model, val_loader, loss_fn, device)
         print(f"[epoch {epoch}] val:\n{format_eval(eval_results)}")
         history.append({"epoch": epoch, **eval_results})

@@ -8,6 +8,7 @@ well-formed JSON that the builder can parse directly.
 Prompts are kept in a single module so prompt engineering can be iterated
 without touching generator or builder code.
 """
+
 from __future__ import annotations
 
 SYSTEM_PROMPT = """\

@@ -28,26 +28,31 @@ def test_conversation_from_text_is_single_turn():
 
 def test_conversation_rejects_empty():
     import pytest
+
     with pytest.raises(ValueError):
         Conversation(turns=[])
 
 
 def test_conversation_target_and_context():
-    conv = Conversation(turns=[
-        Turn(role=Role.SYSTEM, text="sys"),
-        Turn(role=Role.USER, text="u1"),
-        Turn(role=Role.CHAR, text="c1"),
-        Turn(role=Role.USER, text="target"),
-    ])
+    conv = Conversation(
+        turns=[
+            Turn(role=Role.SYSTEM, text="sys"),
+            Turn(role=Role.USER, text="u1"),
+            Turn(role=Role.CHAR, text="c1"),
+            Turn(role=Role.USER, text="target"),
+        ]
+    )
     assert conv.target.text == "target"
     assert [t.text for t in conv.context] == ["sys", "u1", "c1"]
 
 
 def test_conversation_roundtrip():
-    conv = Conversation.from_turns([
-        {"role": "system", "text": "sys"},
-        {"role": "user", "text": "hi"},
-    ])
+    conv = Conversation.from_turns(
+        [
+            {"role": "system", "text": "sys"},
+            {"role": "user", "text": "hi"},
+        ]
+    )
     restored = Conversation.from_dict(conv.to_dict())
     assert restored.turns == conv.turns
 
@@ -79,11 +84,13 @@ def test_example_is_negative_when_all_below_half():
 
 
 def test_render_for_debug_uses_current_on_last_turn():
-    conv = Conversation(turns=[
-        Turn(role=Role.USER, text="hi"),
-        Turn(role=Role.CHAR, text="hello"),
-        Turn(role=Role.USER, text="target"),
-    ])
+    conv = Conversation(
+        turns=[
+            Turn(role=Role.USER, text="hi"),
+            Turn(role=Role.CHAR, text="hello"),
+            Turn(role=Role.USER, text="target"),
+        ]
+    )
     rendered = render_for_debug(conv)
     assert ROLE_TOKEN[Role.USER] in rendered  # appears on earlier user turn
     assert ROLE_TOKEN[Role.CHAR] in rendered

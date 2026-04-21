@@ -4,6 +4,7 @@ into SAGE's canonical 7-category schema.
 Load lazily — none of these import ``datasets`` at module level so unit tests
 can import ``loaders`` without the optional training dependency.
 """
+
 from __future__ import annotations
 
 from collections.abc import Iterator
@@ -17,8 +18,9 @@ if TYPE_CHECKING:
     from datasets import Dataset
 
 
-def _load_hf(name: str, split: str, **kwargs) -> "Dataset":
+def _load_hf(name: str, split: str, **kwargs) -> Dataset:
     from datasets import load_dataset
+
     return load_dataset(name, split=split, **kwargs)
 
 

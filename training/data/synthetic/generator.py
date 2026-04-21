@@ -4,6 +4,7 @@ Implementations should keep the interface narrow — a single ``generate`` that
 takes a system prompt and a user prompt and returns a text completion. The
 builder layer above handles structure, retries, and parsing.
 """
+
 from __future__ import annotations
 
 import json
@@ -35,6 +36,7 @@ class AnthropicGenerator(Generator):
     generated once and reviewed by a human, so the per-sample cost is
     amortized across all future training runs. Caller may override the model.
     """
+
     def __init__(
         self,
         model: str = "claude-opus-4-5",
@@ -80,6 +82,7 @@ class AnthropicGenerator(Generator):
 class OllamaGenerator(Generator):
     """Local generation via Ollama (http://localhost:11434). Cheaper but
     quality depends on the model. Good for iterating on prompt structure."""
+
     def __init__(
         self,
         model: str = "llama3.1:8b",
@@ -97,6 +100,7 @@ class OllamaGenerator(Generator):
         temperature: float = 0.8,
     ) -> str:
         import requests
+
         resp = requests.post(
             f"{self.host}/api/chat",
             json={
@@ -121,6 +125,7 @@ class OllamaGenerator(Generator):
 class MockGenerator(Generator):
     """Returns canned responses for unit tests. Use ``next_response`` to
     queue specific completions."""
+
     responses: list[str]
 
     def generate(
@@ -148,7 +153,7 @@ def json_loads_lenient(text: str) -> Any:
         if first_nl != -1:
             s = s[first_nl + 1 :]
         if s.endswith("```"):
-            s = s[: -3]
+            s = s[:-3]
     s = s.strip()
     # Try direct parse first
     try:

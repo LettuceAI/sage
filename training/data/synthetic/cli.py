@@ -24,6 +24,7 @@ Two-step workflow:
    same JSONL shape as the aggregator output, ready to concatenate with the
    main training set.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -134,8 +135,10 @@ def cmd_merge(args: argparse.Namespace) -> None:
         for row in approved:
             f.write(json.dumps(row, ensure_ascii=False) + "\n")
 
-    print(f"[merge] approved={counts['approved']}  rejected={counts['rejected']}  "
-          f"pending={counts['pending']}")
+    print(
+        f"[merge] approved={counts['approved']}  rejected={counts['rejected']}  "
+        f"pending={counts['pending']}"
+    )
     print(f"[merge] wrote {len(approved)} approved examples to {args.out}")
 
 

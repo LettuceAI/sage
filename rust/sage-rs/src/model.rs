@@ -49,15 +49,18 @@ impl Sage {
         tokenizer_path: impl AsRef<Path>,
         max_length: usize,
     ) -> Result<Self> {
-        let session = Session::builder()?
-            .commit_from_file(onnx_path.as_ref())?;
+        let session = Session::builder()?.commit_from_file(onnx_path.as_ref())?;
         let inner = Tokenizer::from_file(tokenizer_path.as_ref())?;
         let tokenizer = SageTokenizer::new(inner, max_length)?;
         let thresholds = DEFAULT_THRESHOLDS
             .iter()
             .copied()
             .collect::<HashMap<_, _>>();
-        Ok(Self { session: Mutex::new(session), tokenizer, thresholds })
+        Ok(Self {
+            session: Mutex::new(session),
+            tokenizer,
+            thresholds,
+        })
     }
 
     pub fn set_threshold(&mut self, category: Category, threshold: f32) {
@@ -98,10 +101,7 @@ impl Sage {
                 "pooling_mask" => Value::from_array(pooling_mask)?,
             ])?;
             let (shape, data) = outputs["logits"].try_extract_tensor::<f32>()?;
-            (
-                shape.iter().map(|&d| d as usize).collect(),
-                data.to_vec(),
-            )
+            (shape.iter().map(|&d| d as usize).collect(), data.to_vec())
         };
 
         if shape_usize != [1, 7] {
@@ -121,7 +121,10 @@ impl Sage {
             any_flagged |= flagged;
             categories.insert(*category, CategoryResult { score, flagged });
         }
-        Ok(ModerationResult { flagged: any_flagged, categories })
+        Ok(ModerationResult {
+            flagged: any_flagged,
+            categories,
+        })
     }
 }
 

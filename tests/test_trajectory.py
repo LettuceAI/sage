@@ -37,7 +37,7 @@ def test_build_benign_context_respects_target_role():
     # Before a USER target, last context turn should be CHAR
     assert ctx[-1].role is Role.CHAR
     # Alternation holds between consecutive turns
-    for prev, curr in zip(ctx, ctx[1:]):
+    for prev, curr in zip(ctx, ctx[1:], strict=False):
         assert prev.role != curr.role
 
 
@@ -60,10 +60,12 @@ def test_pad_with_benign_context_preserves_labels_and_adds_turns():
 
 def test_pad_with_benign_context_rejects_multi_turn_input():
     ex = Example(
-        conversation=Conversation(turns=[
-            Turn(role=Role.USER, text="hi"),
-            Turn(role=Role.USER, text="target"),
-        ]),
+        conversation=Conversation(
+            turns=[
+                Turn(role=Role.USER, text="hi"),
+                Turn(role=Role.USER, text="target"),
+            ]
+        ),
         labels={},
     )
     with pytest.raises(ValueError):
@@ -77,9 +79,7 @@ def test_pad_negative_rejects_positive_input():
 
 
 def test_trajectorize_yields_at_least_some_outputs_and_preserves_multi_turn():
-    negatives = [
-        Example.from_text(f"clean text {i}", source="neg") for i in range(50)
-    ]
+    negatives = [Example.from_text(f"clean text {i}", source="neg") for i in range(50)]
     positives = [
         Example.from_text(
             f"bad text {i}",
@@ -90,24 +90,28 @@ def test_trajectorize_yields_at_least_some_outputs_and_preserves_multi_turn():
     ]
     # A pre-existing multi-turn example that should pass through unchanged.
     multi = Example(
-        conversation=Conversation(turns=[
-            Turn(role=Role.USER, text="hey"),
-            Turn(role=Role.CHAR, text="hi"),
-            Turn(role=Role.USER, text="target"),
-        ]),
+        conversation=Conversation(
+            turns=[
+                Turn(role=Role.USER, text="hey"),
+                Turn(role=Role.CHAR, text="hi"),
+                Turn(role=Role.USER, text="target"),
+            ]
+        ),
         labels={Category.NSFW: 0.8},
         source="multi",
     )
 
-    out = list(trajectorize(
-        iter([*negatives, *positives, multi]),
-        TrajectoryConfig(
-            benign_pad_prob=1.0,
-            edgy_neg_pad_prob=1.0,
-            preserve_original_prob=1.0,
-            seed=7,
-        ),
-    ))
+    out = list(
+        trajectorize(
+            iter([*negatives, *positives, multi]),
+            TrajectoryConfig(
+                benign_pad_prob=1.0,
+                edgy_neg_pad_prob=1.0,
+                preserve_original_prob=1.0,
+                seed=7,
+            ),
+        )
+    )
 
     # With all probs at 1.0 we should emit both the original and the augmented
     # for every single-turn example, plus the multi-turn unchanged.
