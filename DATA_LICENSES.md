@@ -1,6 +1,6 @@
 # Training data licenses
 
-SAGE is trained on eight publicly available datasets. All sources are under **commercially-permissive licenses** and none require gated access. This document records license terms, attribution, and the per-source **observation coverage** that the training pipeline relies on for partial-signal handling.
+SAGE is trained on seven publicly available datasets. All sources are under **commercially-permissive licenses** and none require gated access. This document records license terms, attribution, and the per-source **observation coverage** that the training pipeline relies on for partial-signal handling.
 
 The SAGE code is licensed under Apache 2.0. The SAGE model weights — because they are trained on datasets under mixed licenses — carry the **most restrictive obligations of the constituent datasets**, which in practice amounts to: attribution (CC-BY-4.0), attribution under ODC-BY, and inheritance of CC-BY-SA-3.0 on any redistributed underlying text. Redistributing the model weights is permitted; redistributing raw training data is not handled here.
 
@@ -12,7 +12,6 @@ Each source labels only a subset of SAGE's seven categories. The training pipeli
 
 | Source | Observed categories |
 |---|---|
-| Jigsaw Toxic | harassment, violence, hate_speech |
 | Civil Comments | harassment, violence, hate_speech, nsfw |
 | Measuring Hate Speech | hate_speech |
 | Salad-Data | all seven |
@@ -24,15 +23,7 @@ Each source labels only a subset of SAGE's seven categories. The training pipeli
 
 ---
 
-## 1. Jigsaw Toxic Comment Classification Challenge
-
-- **Source:** [huggingface.co/datasets/google/jigsaw_toxicity_pred](https://huggingface.co/datasets/google/jigsaw_toxicity_pred)
-- **License:** CC0 1.0 (annotations), CC-BY-SA-3.0 (underlying Wikipedia talk-page text)
-- **Commercial use:** Allowed
-- **Attribution:** Wikipedia contributors; Jigsaw / Conversation AI
-- **Categories used:** toxic, severe_toxic, obscene, threat, insult, identity_hate
-
-## 2. Civil Comments
+## 1. Civil Comments
 
 - **Source:** [huggingface.co/datasets/google/civil_comments](https://huggingface.co/datasets/google/civil_comments)
 - **License:** CC0 1.0
@@ -41,7 +32,7 @@ Each source labels only a subset of SAGE's seven categories. The training pipeli
 - **Categories used:** toxicity, severe_toxicity, obscene, threat, insult, identity_attack, sexual_explicit
 - **Citation:** Borkan et al., 2019 — [arXiv:1903.04561](https://arxiv.org/abs/1903.04561)
 
-## 3. Measuring Hate Speech
+## 2. Measuring Hate Speech
 
 - **Source:** [huggingface.co/datasets/ucberkeley-dlab/measuring-hate-speech](https://huggingface.co/datasets/ucberkeley-dlab/measuring-hate-speech)
 - **License:** CC-BY-4.0
@@ -54,7 +45,7 @@ Each source labels only a subset of SAGE's seven categories. The training pipeli
   a hate speech application. arXiv:2009.10277.
   ```
 
-## 4. Salad-Data
+## 3. Salad-Data
 
 - **Source:** [huggingface.co/datasets/OpenSafetyLab/Salad-Data](https://huggingface.co/datasets/OpenSafetyLab/Salad-Data)
 - **License:** Apache 2.0
@@ -62,7 +53,7 @@ Each source labels only a subset of SAGE's seven categories. The training pipeli
 - **Attribution:** OpenSafetyLab
 - **Categories used:** Adult Content, Hate Speech & Discrimination, Child Abuse, Illegal activity subsets
 
-## 5. ProsocialDialog
+## 4. ProsocialDialog
 
 - **Source:** [huggingface.co/datasets/allenai/prosocial-dialog](https://huggingface.co/datasets/allenai/prosocial-dialog)
 - **License:** CC-BY-4.0
@@ -75,7 +66,7 @@ Each source labels only a subset of SAGE's seven categories. The training pipeli
   ProsocialDialog: A Prosocial Backbone for Conversational Agents. EMNLP 2022.
   ```
 
-## 6. Anthropic HH-RLHF (red-team subset)
+## 5. Anthropic HH-RLHF (red-team subset)
 
 - **Source:** [huggingface.co/datasets/Anthropic/hh-rlhf](https://huggingface.co/datasets/Anthropic/hh-rlhf)
 - **License:** MIT
@@ -84,7 +75,7 @@ Each source labels only a subset of SAGE's seven categories. The training pipeli
 - **Subset used:** `red-team-attempts/` only — diverse adversarial prompts across harm categories
 - **Note:** The upstream authors advise against training **dialogue agents** on the harmlessness preference data. SAGE is a **classifier**, not a dialogue agent; the red-team prompts are used only as labeled harmful examples for supervised classification.
 
-## 7. NVIDIA Aegis Content Safety Dataset
+## 6. NVIDIA Aegis Content Safety Dataset
 
 - **Source:** [huggingface.co/datasets/nvidia/Aegis-AI-Content-Safety-Dataset-1.0](https://huggingface.co/datasets/nvidia/Aegis-AI-Content-Safety-Dataset-1.0)
 - **License:** CC-BY-4.0
@@ -99,7 +90,7 @@ Each source labels only a subset of SAGE's seven categories. The training pipeli
   AEGIS: Online Adaptive AI Content Safety Moderation with Ensemble of LLM Experts.
   ```
 
-## 8. WildChat-1M (AI2)
+## 7. WildChat-1M (AI2)
 
 - **Source:** [huggingface.co/datasets/allenai/WildChat-1M](https://huggingface.co/datasets/allenai/WildChat-1M)
 - **License:** ODC-BY (Open Data Commons Attribution)
@@ -126,6 +117,7 @@ These were evaluated and rejected for SAGE v1:
 | lmsys/toxic-chat | CC-BY-NC-4.0 | Non-commercial only |
 | allenai/wildguardmix | ODC-BY (gated) | Gated behind AI2 Responsible Use acceptance; replaced by Aegis + WildChat |
 | microsoft/toxigen | Access-form gated | Form-gated, license terms unclear for commercial use |
+| google/jigsaw_toxicity_pred | CC0 | Legacy loading-script-only on HF; unsupported by modern `datasets`. Civil Comments covers the same taxonomy with more data |
 
 ---
 

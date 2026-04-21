@@ -108,7 +108,7 @@ See [`docs/data_pipeline.md`](docs/data_pipeline.md) and [`docs/training.md`](do
 
 ## Datasets
 
-`sage` is trained on eight openly-licensed, non-gated datasets. All source licenses permit commercial use, redistribution, and training of models that are publicly released. Attribution for each source is listed in [`DATA_LICENSES.md`](DATA_LICENSES.md).
+`sage` is trained on seven openly-licensed, non-gated datasets. All source licenses permit commercial use, redistribution, and training of models that are publicly released. Attribution for each source is listed in [`DATA_LICENSES.md`](DATA_LICENSES.md).
 
 Rare categories (self-harm, grooming) are augmented with LLM-generated trajectories that pass through a human-review gate before being merged into the training set. Sexual content involving minors is treated as a zero-tolerance category: positive examples come only from the Salad-Data child-safety subset, and the synthetic pipeline generates hard negatives only.
 

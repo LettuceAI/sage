@@ -30,38 +30,7 @@ def _load_hf(name: str, split: str, **kwargs) -> Dataset:
 
 
 # ---------------------------------------------------------------------------
-# 1. Jigsaw Toxic Comment Classification
-#    Columns: comment_text, toxic, severe_toxic, obscene, threat, insult, identity_hate
-#    License: CC0 + CC-BY-SA-3.0
-# ---------------------------------------------------------------------------
-JIGSAW_OBSERVED: frozenset[Category] = frozenset(
-    {Category.HARASSMENT, Category.VIOLENCE, Category.HATE_SPEECH}
-)
-
-
-def load_jigsaw(split: str = "train") -> Iterator[Example]:
-    ds = _load_hf("google/jigsaw_toxicity_pred", split=split, trust_remote_code=True)
-    for row in ds:
-        labels: dict[Category, float] = {}
-        harass = max(row["toxic"], row["severe_toxic"], row["insult"])
-        if harass:
-            labels[Category.HARASSMENT] = float(harass)
-        if row["threat"]:
-            labels[Category.VIOLENCE] = float(row["threat"])
-        if row["identity_hate"]:
-            labels[Category.HATE_SPEECH] = float(row["identity_hate"])
-        # `obscene` is mostly profanity, not explicit sexual content; deliberately
-        # not mapped to NSFW. Jigsaw doesn't observe NSFW at all.
-        yield Example.from_text(
-            row["comment_text"],
-            labels=labels,
-            observed=JIGSAW_OBSERVED,
-            source="jigsaw",
-        )
-
-
-# ---------------------------------------------------------------------------
-# 2. Civil Comments
+# 1. Civil Comments
 #    Columns: text, toxicity, severe_toxicity, obscene, threat, insult,
 #             identity_attack, sexual_explicit (all float ∈ [0, 1])
 #    License: CC0
@@ -438,7 +407,6 @@ def load_wildchat(split: str = "train") -> Iterator[Example]:
 # Registry — used by aggregate.py
 # ---------------------------------------------------------------------------
 LOADERS = {
-    "jigsaw": load_jigsaw,
     "civil_comments": load_civil_comments,
     "measuring_hate_speech": load_measuring_hate_speech,
     "salad_data": load_salad_data,
