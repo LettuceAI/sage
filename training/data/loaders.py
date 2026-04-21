@@ -247,95 +247,190 @@ def load_hh_rlhf_redteam() -> Iterator[Example]:
 
 
 # ---------------------------------------------------------------------------
-# 7. WildGuardMix (AI2) — purpose-built safety classifier training data
-#    License: ODC-BY (commercial-permissive; AI2 Responsible Use Guidelines apply)
+# 7. NVIDIA Aegis Content Safety Dataset
+#    License: CC-BY-4.0 (not gated)
 #
-#    Every row is annotator-verified across harm types. ``prompt_harm_label``
-#    gives a global harm verdict; ``subcategory`` narrows the specific type.
-#    Unharmful rows are the one source we trust to provide reliable negatives
-#    across all seven categories simultaneously: if annotators marked a prompt
-#    "unharmful" they examined every kind of harm.
+#    Aegis is a purpose-built safety classifier training set spanning 13 harm
+#    subcategories. The "Safe" verdict is the one signal we trust to provide
+#    reliable cross-category negatives — those rows carry all seven SAGE
+#    categories as observed. Harm rows carry only the subcategories that
+#    were explicitly flagged.
+#
+#    Aegis is uniquely valuable because it has a dedicated ``Sexual Minor``
+#    label, which fills the largest data gap in SAGE's taxonomy.
 # ---------------------------------------------------------------------------
-WILDGUARD_OBSERVED_UNHARMFUL: frozenset[Category] = ALL_CATEGORIES
-
-# Ordered substring matches — first hit wins. ``sexual_minors`` patterns are
-# checked before the generic ``sexual`` pattern so CSAM-adjacent rows route to
-# the right head.
-WILDGUARD_SUBCAT_MAP: tuple[tuple[str, Category], ...] = (
-    ("child sexual", Category.SEXUAL_MINORS),
-    ("csam", Category.SEXUAL_MINORS),
-    ("sexual content involving minors", Category.SEXUAL_MINORS),
-    ("minors", Category.SEXUAL_MINORS),
-    ("grooming", Category.GROOMING),
-    ("self-harm", Category.SELF_HARM),
-    ("self harm", Category.SELF_HARM),
-    ("suicide", Category.SELF_HARM),
-    ("sexual", Category.NSFW),
-    ("explicit", Category.NSFW),
-    ("violence", Category.VIOLENCE),
-    ("physical harm", Category.VIOLENCE),
-    ("weapon", Category.VIOLENCE),
-    ("harassment", Category.HARASSMENT),
-    ("bullying", Category.HARASSMENT),
-    ("abuse", Category.HARASSMENT),
-    ("hate", Category.HATE_SPEECH),
-    ("discriminat", Category.HATE_SPEECH),
-    ("stereotype", Category.HATE_SPEECH),
-)
+AEGIS_CATEGORY_MAP: dict[str, Category] = {
+    "hate/identity hate": Category.HATE_SPEECH,
+    "hate": Category.HATE_SPEECH,
+    "identity hate": Category.HATE_SPEECH,
+    "sexual": Category.NSFW,
+    "violence": Category.VIOLENCE,
+    "threat": Category.VIOLENCE,
+    "suicide and self harm": Category.SELF_HARM,
+    "suicide": Category.SELF_HARM,
+    "self harm": Category.SELF_HARM,
+    "sexual minor": Category.SEXUAL_MINORS,
+    "harassment": Category.HARASSMENT,
+    # Aegis categories we deliberately don't map (out of SAGE scope):
+    # profanity, guns/illegal weapons, controlled substances,
+    # criminal planning, pii/privacy, other.
+}
 
 
-def _wildguard_map_subcategory(sub: str | None) -> Category | None:
-    if not sub:
-        return None
-    s = sub.lower()
-    for needle, category in WILDGUARD_SUBCAT_MAP:
-        if needle in s:
-            return category
-    return None
+def _aegis_labels_from_row(row: dict) -> tuple[dict[Category, float], bool] | None:
+    """Return (labels, is_explicit_safe) or None if the row is unlabelled.
 
-
-def load_wildguardmix(split: str = "train") -> Iterator[Example]:
-    """Emit one Example per WildGuardMix prompt.
-
-    Policy:
-    - unharmful prompt → clean negative across all 7 categories
-    - harmful prompt, subcategory maps → positive for that single category,
-      observed = {that category} (can't assert clean on the other six)
-    - harmful prompt, subcategory unmapped → skip
-    - response-only rows (no prompt_harm_label) → skip for v1
+    ``is_explicit_safe`` indicates the row was marked "Safe" by the annotator —
+    which gives us permission to claim negative across all seven categories.
     """
-    subset = "wildguardtrain" if split == "train" else "wildguardtest"
-    from datasets import load_dataset
+    # Different Aegis revisions expose slightly different column names. Try a
+    # sequence of likely fields to find the annotator's category labels.
+    candidates = []
+    for key in ("labels_0", "labels_1", "labels_2", "violated_categories", "categories"):
+        value = row.get(key)
+        if value:
+            candidates.append(value)
+    if not candidates:
+        return None
 
-    ds = load_dataset("allenai/wildguardmix", subset, split="train")
+    # Normalize candidates to a flat list of lowercase strings.
+    flat: list[str] = []
+    for value in candidates:
+        if isinstance(value, str):
+            flat.extend(v.strip().lower() for v in value.split(","))
+        elif isinstance(value, list):
+            for v in value:
+                if isinstance(v, str):
+                    flat.append(v.strip().lower())
+
+    if not flat:
+        return None
+
+    is_safe = any(v in ("safe",) for v in flat)
+    labels: dict[Category, float] = {}
+    for tag in flat:
+        for key, category in AEGIS_CATEGORY_MAP.items():
+            if key in tag:
+                labels[category] = 1.0
+                break
+    return labels, is_safe
+
+
+def load_aegis(split: str = "train") -> Iterator[Example]:
+    """Emit Examples from NVIDIA's Aegis Content Safety dataset."""
+    ds = _load_hf("nvidia/Aegis-AI-Content-Safety-Dataset-1.0", split=split)
     for row in ds:
-        prompt = row.get("prompt") or ""
-        if not prompt:
+        text = row.get("text") or row.get("prompt") or ""
+        if not text:
             continue
-        harm_label = (row.get("prompt_harm_label") or "").lower()
-        subcategory = row.get("subcategory")
+        # Aegis labels both prompts and responses. Skip the response rows for
+        # v1 — they are LLM outputs and we want SAGE to classify user-side
+        # text first. Support for response-side classification can come later.
+        text_type = (row.get("text_type") or "").lower()
+        if text_type and "response" in text_type:
+            continue
 
-        if harm_label == "unharmful":
+        parsed = _aegis_labels_from_row(row)
+        if parsed is None:
+            continue
+        labels, is_safe = parsed
+
+        if is_safe and not labels:
+            # Explicit "Safe" — reliable clean negative across all categories.
             yield Example.from_text(
-                prompt,
+                text,
                 labels={},
-                observed=WILDGUARD_OBSERVED_UNHARMFUL,
-                source="wildguardmix",
-                meta={"adversarial": bool(row.get("adversarial", False))},
+                observed=ALL_CATEGORIES,
+                source="aegis",
             )
-        elif harm_label == "harmful":
-            mapped = _wildguard_map_subcategory(subcategory)
-            if mapped is None:
-                continue
+        elif labels:
             yield Example.from_text(
-                prompt,
-                labels={mapped: 1.0},
-                observed=frozenset({mapped}),
-                source="wildguardmix",
-                meta={
-                    "adversarial": bool(row.get("adversarial", False)),
-                    "subcategory": subcategory,
-                },
+                text,
+                labels=labels,
+                observed=frozenset(labels.keys()),
+                source="aegis",
+            )
+
+
+# ---------------------------------------------------------------------------
+# 8. WildChat-1M (AI2) — real LLM chat logs with OpenAI moderation labels
+#    License: ODC-BY (cleaned version is NOT gated)
+#
+#    Each turn carries an OpenAI Moderation API score vector. We treat those
+#    scores as full-coverage labels (OpenAI Moderation covers every SAGE
+#    category). For v1 we emit one Example per USER turn — assistant turns
+#    can be added later as CHAR-role examples when we start classifying
+#    model outputs.
+# ---------------------------------------------------------------------------
+WILDCHAT_OPENAI_MAP: dict[str, Category] = {
+    "harassment": Category.HARASSMENT,
+    "harassment/threatening": Category.HARASSMENT,
+    "hate": Category.HATE_SPEECH,
+    "hate/threatening": Category.HATE_SPEECH,
+    "self-harm": Category.SELF_HARM,
+    "self-harm/intent": Category.SELF_HARM,
+    "self-harm/instructions": Category.SELF_HARM,
+    "sexual": Category.NSFW,
+    "sexual/minors": Category.SEXUAL_MINORS,
+    "violence": Category.VIOLENCE,
+    "violence/graphic": Category.VIOLENCE,
+}
+
+
+def _wildchat_labels_from_scores(
+    category_scores: dict | None,
+    *,
+    threshold: float = 0.5,
+) -> dict[Category, float]:
+    if not isinstance(category_scores, dict):
+        return {}
+    labels: dict[Category, float] = {}
+    for key, score in category_scores.items():
+        try:
+            score_f = float(score)
+        except (TypeError, ValueError):
+            continue
+        if score_f < threshold:
+            continue
+        mapped = WILDCHAT_OPENAI_MAP.get(key)
+        if mapped is None:
+            continue
+        labels[mapped] = max(labels.get(mapped, 0.0), score_f)
+    return labels
+
+
+def load_wildchat(split: str = "train") -> Iterator[Example]:
+    """Emit one Example per USER turn across WildChat conversations.
+
+    Uses the OpenAI Moderation ``category_scores`` when present; otherwise
+    falls back to the Boolean ``categories`` dict. Rows without any
+    moderation payload are treated as full-coverage negatives — WildChat's
+    cleaned release already filtered the most toxic conversations upstream.
+    """
+    ds = _load_hf("allenai/WildChat-1M", split=split)
+    for row in ds:
+        conversation = row.get("conversation") or []
+        moderations = row.get("openai_moderation") or []
+        if not isinstance(conversation, list):
+            continue
+        for turn_idx, turn in enumerate(conversation):
+            if not isinstance(turn, dict):
+                continue
+            if (turn.get("role") or "").lower() != "user":
+                continue
+            text = turn.get("content") or ""
+            if not text:
+                continue
+            mod = moderations[turn_idx] if turn_idx < len(moderations) else None
+            scores = (mod or {}).get("category_scores") if isinstance(mod, dict) else None
+            labels = _wildchat_labels_from_scores(scores)
+            yield Example.from_text(
+                text,
+                labels=labels,
+                observed=ALL_CATEGORIES,
+                source="wildchat",
+                role=Role.USER,
+                meta={"turn": turn_idx},
             )
 
 
@@ -349,5 +444,6 @@ LOADERS = {
     "salad_data": load_salad_data,
     "prosocial_dialog": load_prosocial_dialog,
     "hh_rlhf_redteam": load_hh_rlhf_redteam,
-    "wildguardmix": load_wildguardmix,
+    "aegis": load_aegis,
+    "wildchat": load_wildchat,
 }

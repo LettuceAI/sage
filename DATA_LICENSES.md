@@ -1,6 +1,6 @@
 # Training data licenses
 
-SAGE is trained on seven publicly available datasets. All sources are under **commercially-permissive licenses**. This document records license terms, attribution, and the per-source **observation coverage** that the training pipeline relies on for partial-signal handling.
+SAGE is trained on eight publicly available datasets. All sources are under **commercially-permissive licenses** and none require gated access. This document records license terms, attribution, and the per-source **observation coverage** that the training pipeline relies on for partial-signal handling.
 
 The SAGE code is licensed under Apache 2.0. The SAGE model weights — because they are trained on datasets under mixed licenses — carry the **most restrictive obligations of the constituent datasets**, which in practice amounts to: attribution (CC-BY-4.0), attribution under ODC-BY, and inheritance of CC-BY-SA-3.0 on any redistributed underlying text. Redistributing the model weights is permitted; redistributing raw training data is not handled here.
 
@@ -18,8 +18,9 @@ Each source labels only a subset of SAGE's seven categories. The training pipeli
 | Salad-Data | all seven |
 | ProsocialDialog (prosocial replies) | all seven (as negatives) |
 | Anthropic HH-RLHF red-team | per-row, from tag |
-| WildGuardMix (unharmful rows) | all seven |
-| WildGuardMix (harmful rows) | the one matched subcategory |
+| Aegis (Safe rows) | all seven |
+| Aegis (harm rows) | the flagged subcategories only |
+| WildChat-1M | all seven (OpenAI Moderation covers every category) |
 
 ---
 
@@ -74,23 +75,7 @@ Each source labels only a subset of SAGE's seven categories. The training pipeli
   ProsocialDialog: A Prosocial Backbone for Conversational Agents. EMNLP 2022.
   ```
 
-## 6. WildGuardMix (AI2)
-
-- **Source:** [huggingface.co/datasets/allenai/wildguardmix](https://huggingface.co/datasets/allenai/wildguardmix)
-- **License:** ODC-BY (Open Data Commons Attribution)
-- **Additional terms:** AI2 Responsible Use Guidelines apply to downstream use
-- **Commercial use:** Allowed (with attribution)
-- **Attribution required:** Allen Institute for AI
-- **Size:** ~87k labeled prompts + ~1.7k test items
-- **Role in SAGE:** Primary source of reliable negatives across all categories. Unharmful rows are the one source that annotators checked against every harm type simultaneously. Harmful rows provide subcategory-labelled positives.
-- **Citation:**
-  ```
-  Han, S., Rao, K., Ettinger, A., Jiang, L., Lin, B. Y., Lambert, N.,
-  Choi, Y., & Dziri, N. (2024). WildGuard: Open One-Stop Moderation
-  Tools for Safety Risks, Jailbreaks, and Refusals of LLMs.
-  ```
-
-## 7. Anthropic HH-RLHF (red-team subset)
+## 6. Anthropic HH-RLHF (red-team subset)
 
 - **Source:** [huggingface.co/datasets/Anthropic/hh-rlhf](https://huggingface.co/datasets/Anthropic/hh-rlhf)
 - **License:** MIT
@@ -98,6 +83,36 @@ Each source labels only a subset of SAGE's seven categories. The training pipeli
 - **Attribution:** Anthropic
 - **Subset used:** `red-team-attempts/` only — diverse adversarial prompts across harm categories
 - **Note:** The upstream authors advise against training **dialogue agents** on the harmlessness preference data. SAGE is a **classifier**, not a dialogue agent; the red-team prompts are used only as labeled harmful examples for supervised classification.
+
+## 7. NVIDIA Aegis Content Safety Dataset
+
+- **Source:** [huggingface.co/datasets/nvidia/Aegis-AI-Content-Safety-Dataset-1.0](https://huggingface.co/datasets/nvidia/Aegis-AI-Content-Safety-Dataset-1.0)
+- **License:** CC-BY-4.0
+- **Commercial use:** ✅ Allowed (with attribution)
+- **Gated:** No
+- **Attribution required:** NVIDIA
+- **Size:** ~12k labeled prompts/responses across 13 harm subcategories
+- **Role in SAGE:** Provides reliable cross-category negatives from "Safe" rows and subcategory-labelled positives. Uniquely includes a dedicated ``Sexual Minor`` label that fills the largest gap in SAGE's taxonomy.
+- **Citation:**
+  ```
+  Ghosh, S., Varshney, P., Galinkin, E., & Parisien, C. (2024).
+  AEGIS: Online Adaptive AI Content Safety Moderation with Ensemble of LLM Experts.
+  ```
+
+## 8. WildChat-1M (AI2)
+
+- **Source:** [huggingface.co/datasets/allenai/WildChat-1M](https://huggingface.co/datasets/allenai/WildChat-1M)
+- **License:** ODC-BY (Open Data Commons Attribution)
+- **Commercial use:** ✅ Allowed (with attribution)
+- **Gated:** No (the ``WildChat-1M`` cleaned release is public; ``WildChat-1M-Full`` is the gated variant — we do not use it)
+- **Attribution required:** Allen Institute for AI
+- **Size:** ~838k real LLM conversations with per-turn OpenAI Moderation + Detoxify scores
+- **Role in SAGE:** Scale and realism. Natural multi-turn chat data with OpenAI Moderation labels that cover every SAGE category 1:1. User turns are emitted as single-turn Examples; future iterations may emit full trajectories.
+- **Citation:**
+  ```
+  Zhao, W., Ren, X., Hessel, J., Cardie, C., Choi, Y., & Deng, Y. (2024).
+  WildChat: 1M ChatGPT Interaction Logs in the Wild. ICLR 2024.
+  ```
 
 ---
 
@@ -109,6 +124,8 @@ These were evaluated and rejected for SAGE v1:
 |---|---|---|
 | PKU-Alignment/BeaverTails | CC-BY-NC-4.0 | Non-commercial only |
 | lmsys/toxic-chat | CC-BY-NC-4.0 | Non-commercial only |
+| allenai/wildguardmix | ODC-BY (gated) | Gated behind AI2 Responsible Use acceptance; replaced by Aegis + WildChat |
+| microsoft/toxigen | Access-form gated | Form-gated, license terms unclear for commercial use |
 
 ---
 
