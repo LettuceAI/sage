@@ -36,12 +36,11 @@ logs/
 mlruns/
 tb_logs/
 
-# Data
-data/raw/
-data/processed/
-data/cache/
+# Data — never commit raw or processed training data
+data/
 *.parquet
 *.arrow
+*.jsonl
 *.jsonl.gz
 
 # Rust
