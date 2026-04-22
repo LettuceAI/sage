@@ -47,6 +47,9 @@ dev = [
     "ruff>=0.4",
     "mypy>=1.9",
 ]
+review = [
+    "flask>=3.0",
+]
 
 [project.urls]
 Homepage = "https://github.com/LettuceAI/sage"
