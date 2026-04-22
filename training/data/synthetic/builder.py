@@ -131,12 +131,14 @@ class SyntheticBuilder:
         if not isinstance(turns_raw, list) or not turns_raw:
             raise ValueError("turns must be a non-empty list")
         turns: list[Turn] = []
+        prev_role: Role | None = None
         for t in turns_raw:
-            role = Role(t["role"])
+            role = _normalize_role(t["role"], prev_role)
             text = str(t["text"]).strip()
             if not text:
                 raise ValueError("empty turn text")
             turns.append(Turn(role=role, text=text))
+            prev_role = role
 
         labels: dict[Category, float] = {}
         if polarity == "positive":
@@ -153,6 +155,51 @@ class SyntheticBuilder:
                 "polarity": polarity,
             },
         )
+
+
+# ---------------------------------------------------------------------------
+# Role normalization — LLM generators frequently invent domain-specific role
+# names ("therapist", "doctor", "student") instead of using our schema. We map
+# common aliases to our three canonical roles and fall back to alternating
+# user/char for anything truly unknown.
+# ---------------------------------------------------------------------------
+_ROLE_ALIASES: dict[str, Role] = {
+    # User-side: humans / patients / students / children
+    "user": Role.USER, "human": Role.USER, "person": Role.USER,
+    "student": Role.USER, "patient": Role.USER, "client": Role.USER,
+    "child": Role.USER, "kid": Role.USER, "teen": Role.USER,
+    "teenager": Role.USER, "minor": Role.USER, "youth": Role.USER,
+    "son": Role.USER, "daughter": Role.USER,
+    "nephew": Role.USER, "niece": Role.USER,
+    # Char-side: authority / adult / assistant / caregiver
+    "char": Role.CHAR, "character": Role.CHAR, "assistant": Role.CHAR,
+    "bot": Role.CHAR, "therapist": Role.CHAR, "doctor": Role.CHAR,
+    "teacher": Role.CHAR, "tutor": Role.CHAR, "coach": Role.CHAR,
+    "librarian": Role.CHAR, "nurse": Role.CHAR, "counselor": Role.CHAR,
+    "parent": Role.CHAR, "mother": Role.CHAR, "father": Role.CHAR,
+    "mom": Role.CHAR, "dad": Role.CHAR, "mentor": Role.CHAR,
+    "adult": Role.CHAR, "professional": Role.CHAR, "friend": Role.CHAR,
+    # System / narration
+    "system": Role.SYSTEM, "narrator": Role.SYSTEM,
+    "instruction": Role.SYSTEM, "context": Role.SYSTEM, "setting": Role.SYSTEM,
+}
+
+
+def _normalize_role(raw: str, prev_role: Role | None) -> Role:
+    """Map LLM-generated role strings to SAGE's three canonical roles.
+
+    Known aliases (see ``_ROLE_ALIASES``) map directly. Unknown strings
+    alternate based on the preceding turn's role — mimicking natural
+    conversation alternation — with USER as the default when no prev exists.
+    """
+    s = str(raw).strip().lower()
+    if s in _ROLE_ALIASES:
+        return _ROLE_ALIASES[s]
+    if prev_role is Role.USER:
+        return Role.CHAR
+    if prev_role is Role.CHAR:
+        return Role.USER
+    return Role.USER
 
 
 def iter_examples_for_review(batch: SyntheticBatch) -> Iterable[Example]:

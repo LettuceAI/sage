@@ -37,7 +37,7 @@ mlruns/
 tb_logs/
 
 # Data — never commit raw or processed training data
-data/
+/data/
 *.parquet
 *.arrow
 *.jsonl
