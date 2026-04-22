@@ -3,6 +3,12 @@
 Loads an ONNX model (fp32 or INT8) + a tokenizer and exposes a friendly
 ``check()`` method that accepts either a string or a list of ``{role, text}``
 dicts, matching the public API in the README.
+
+Single-message content that exceeds the model's ``max_length`` is automatically
+chunked: the target message is split into overlapping token windows, each
+window is classified with the full conversation context, and the per-category
+scores are aggregated with an element-wise max. Chunking is transparent to the
+caller and can be disabled via ``chunk_long_messages=False``.
 """
 
 from __future__ import annotations
@@ -33,11 +39,13 @@ class CategoryResult:
 class ModerationResult:
     flagged: bool
     categories: dict[Category, CategoryResult]
+    n_chunks: int = 1  # number of chunks used — 1 for non-chunked calls
 
     def to_dict(self) -> dict:
         return {
             "flagged": self.flagged,
             "categories": {c.value: r.to_dict() for c, r in self.categories.items()},
+            "n_chunks": self.n_chunks,
         }
 
 
@@ -80,8 +88,72 @@ class Sage:
         return cls(onnx_path, tokenizer, thresholds=thresholds, providers=providers)
 
     # ------------------------------------------------------------------
-    def check(self, x: ConversationInput) -> ModerationResult:
+    def check(
+        self,
+        x: ConversationInput,
+        *,
+        chunk_long_messages: bool = True,
+        chunk_overlap: int = 64,
+    ) -> ModerationResult:
+        """Classify a message or conversation.
+
+        When the target message's token length exceeds the available budget
+        (``max_length`` minus context / special-token overhead), the target is
+        split into overlapping windows, each classified with the full context,
+        and the per-category scores are max-aggregated. This preserves full
+        content coverage on long inputs without retraining at a larger
+        sequence length.
+
+        Args:
+            x: a string, a list of ``{role, text}`` dicts, or a list of
+                ``Turn`` objects.
+            chunk_long_messages: set ``False`` to disable chunking — oversized
+                targets will then be right-truncated by the tokenizer's normal
+                policy (fast but may miss violations in the dropped tail).
+            chunk_overlap: tokens of overlap between adjacent chunks. Prevents
+                missing violations that straddle chunk boundaries.
+        """
         conv = _coerce_conversation(x)
+
+        if not chunk_long_messages:
+            return self._classify(conv, n_chunks=1)
+
+        target_ids = self.tokenizer.tokenizer.encode(
+            conv.target.text, add_special_tokens=False
+        )
+        target_budget = self._target_budget(conv)
+
+        if len(target_ids) <= target_budget:
+            return self._classify(conv, n_chunks=1)
+
+        # Split the target into overlapping windows, re-build a Conversation
+        # per chunk, and classify each.
+        stride = max(1, target_budget - chunk_overlap)
+        partials: list[ModerationResult] = []
+        start = 0
+        while start < len(target_ids):
+            end = min(start + target_budget, len(target_ids))
+            chunk_ids = target_ids[start:end]
+            chunk_text = self.tokenizer.tokenizer.decode(
+                chunk_ids, skip_special_tokens=True
+            )
+            partial_conv = Conversation(
+                turns=[*conv.context, Turn(role=conv.target.role, text=chunk_text)]
+            )
+            partials.append(self._classify(partial_conv, n_chunks=1))
+            if end >= len(target_ids):
+                break
+            start += stride
+
+        return self._merge_max(partials)
+
+    def set_threshold(self, category: Category, threshold: float) -> None:
+        self._thresholds[category] = threshold
+
+    # ------------------------------------------------------------------
+    # Internals
+    # ------------------------------------------------------------------
+    def _classify(self, conv: Conversation, *, n_chunks: int) -> ModerationResult:
         encoded = self.tokenizer.encode(conv)
         input_ids = np.asarray([encoded.input_ids], dtype=np.int64)
         attn = np.asarray([encoded.attention_mask], dtype=np.int64)
@@ -90,7 +162,7 @@ class Sage:
             None,
             {"input_ids": input_ids, "attention_mask": attn, "pooling_mask": pool},
         )
-        probs = _sigmoid(logits[0])  # (num_classes,)
+        probs = _sigmoid(logits[0])
 
         categories: dict[Category, CategoryResult] = {}
         any_flagged = False
@@ -99,10 +171,37 @@ class Sage:
             flagged = score >= self._thresholds[c]
             any_flagged = any_flagged or flagged
             categories[c] = CategoryResult(score=score, flagged=flagged)
-        return ModerationResult(flagged=any_flagged, categories=categories)
+        return ModerationResult(flagged=any_flagged, categories=categories, n_chunks=n_chunks)
 
-    def set_threshold(self, category: Category, threshold: float) -> None:
-        self._thresholds[category] = threshold
+    def _merge_max(self, partials: list[ModerationResult]) -> ModerationResult:
+        """Element-wise max across per-chunk scores. Re-applies thresholds."""
+        assert partials, "no partials to merge"
+        categories: dict[Category, CategoryResult] = {}
+        any_flagged = False
+        for c in CATEGORIES:
+            max_score = max(p.categories[c].score for p in partials)
+            flagged = max_score >= self._thresholds[c]
+            any_flagged = any_flagged or flagged
+            categories[c] = CategoryResult(score=max_score, flagged=flagged)
+        return ModerationResult(
+            flagged=any_flagged,
+            categories=categories,
+            n_chunks=len(partials),
+        )
+
+    def _target_budget(self, conv: Conversation) -> int:
+        """Max tokens the target message can occupy without forcing truncation.
+
+        Mirrors the budget math in ``sage/tokenizer.py``: reserve 1 token for
+        ``[CLS]``, ``2 + len(ctx)`` tokens per context turn for role + SEP, and
+        2 for the target's own ``[CURRENT]`` + trailing ``[SEP]``.
+        """
+        budget = self.tokenizer.max_length - 1  # [CLS]
+        budget -= 2  # [CURRENT] + [SEP] for the target
+        for turn in conv.context:
+            ctx_ids = self.tokenizer.tokenizer.encode(turn.text, add_special_tokens=False)
+            budget -= 2 + len(ctx_ids)
+        return max(1, budget)
 
 
 # ---------------------------------------------------------------------------
