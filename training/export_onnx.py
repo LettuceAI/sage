@@ -39,21 +39,32 @@ def _load_checkpoint(
     return model, tokenizer
 
 
-def _build_dummy_inputs(tokenizer: SageTokenizer, batch: int = 2) -> dict[str, torch.Tensor]:
-    """Synthesize a small batch of encoded conversations for tracing."""
+def _build_dummy_inputs(
+    tokenizer: SageTokenizer, batch: int = 2, seq_len: int | None = None
+) -> dict[str, torch.Tensor]:
+    """Synthesize a small batch of encoded conversations for tracing.
+
+    ``seq_len`` caps the sequence length by truncating / re-padding after
+    the tokenizer produces its full-length output — keeps traced attention
+    tensors small regardless of the tokenizer's max_length.
+    """
     convs = [Conversation.from_text(f"sample text {i}") for i in range(batch)]
     encoded = tokenizer.encode_batch(convs)
-    return {k: torch.tensor(v, dtype=torch.long) for k, v in encoded.items()}
+    tensors = {k: torch.tensor(v, dtype=torch.long) for k, v in encoded.items()}
+    if seq_len is not None:
+        for k, t in tensors.items():
+            if t.dim() == 2 and t.shape[1] > seq_len:
+                tensors[k] = t[:, :seq_len].contiguous()
+    return tensors
 
 
 def export_fp16(model: SageModel, tokenizer: SageTokenizer, out: Path, *, opset: int) -> None:
     out.parent.mkdir(parents=True, exist_ok=True)
-    dummy = _build_dummy_inputs(tokenizer)
-
-    # Cast weights + buffers to fp16. Input ids stay int64 — only float
-    # tensors get cast. At seq=2048 the graph + ALiBi bias still exceeds
-    # 2 GiB even in fp16, so torch auto-writes external data alongside
-    # the .onnx file when given a real file path (not a handle / BytesIO).
+    # Trace with a tiny seq_len. Attention produces a [batch, heads, S, S]
+    # tensor that scales quadratically; at seq=2048 this alone exceeds 2 GiB
+    # across 12 layers in the traced IR. seq=128 keeps it small. Dynamic axes
+    # let runtime handle any length up to the model's pretrain window.
+    dummy = _build_dummy_inputs(tokenizer, batch=2, seq_len=128)
     model_fp16 = model.half()
 
     torch.onnx.export(
@@ -64,9 +75,9 @@ def export_fp16(model: SageModel, tokenizer: SageTokenizer, out: Path, *, opset:
         output_names=OUTPUT_NAMES,
         opset_version=opset,
         dynamic_axes={
-            "input_ids": {0: "batch"},
-            "attention_mask": {0: "batch"},
-            "pooling_mask": {0: "batch"},
+            "input_ids": {0: "batch", 1: "seq"},
+            "attention_mask": {0: "batch", 1: "seq"},
+            "pooling_mask": {0: "batch", 1: "seq"},
             "logits": {0: "batch"},
         },
         do_constant_folding=True,
