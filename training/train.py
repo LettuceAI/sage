@@ -194,19 +194,16 @@ def train(args: argparse.Namespace) -> None:
         dropout=args.dropout,
     )
 
+    resume_state: dict | None = None
     if args.resume_from is not None:
         ckpt_path = Path(args.resume_from)
-        print(f"[resume] loading weights from {ckpt_path}")
-        state = torch.load(ckpt_path, map_location="cpu", weights_only=False)
-        missing, unexpected = model.load_state_dict(state["model"], strict=False)
+        print(f"[resume] loading from {ckpt_path}")
+        resume_state = torch.load(ckpt_path, map_location="cpu", weights_only=False)
+        missing, unexpected = model.load_state_dict(resume_state["model"], strict=False)
         if missing:
             print(f"[resume] missing keys (fresh-init): {len(missing)}")
         if unexpected:
             print(f"[resume] unexpected keys (skipped): {len(unexpected)}")
-        prev_epoch = state.get("epoch", "?")
-        prev_f1 = state.get("macro_f1")
-        if prev_f1 is not None:
-            print(f"[resume] previous epoch={prev_epoch}  macro_f1={prev_f1:.4f}")
 
     model.to(device)
 
@@ -262,14 +259,62 @@ def train(args: argparse.Namespace) -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
     best_macro_f1 = -1.0
     history: list[dict] = []
-
+    start_epoch = 1
+    start_step = 0  # step within the start_epoch to skip to
     global_step = 0
-    for epoch in range(1, args.epochs + 1):
+
+    if resume_state is not None and "optimizer" in resume_state:
+        optimizer.load_state_dict(resume_state["optimizer"])
+        scheduler.load_state_dict(resume_state["scheduler"])
+        scaler.load_state_dict(resume_state["scaler"])
+        best_macro_f1 = resume_state.get("best_macro_f1", -1.0)
+        history = resume_state.get("history", [])
+        global_step = resume_state.get("global_step", 0)
+        saved_epoch = resume_state.get("epoch", 1)
+        saved_step = resume_state.get("step_in_epoch", -1)
+        if saved_step < 0:
+            # Clean end-of-epoch save — start the next epoch fresh.
+            start_epoch = saved_epoch + 1
+            start_step = 0
+        else:
+            # Mid-epoch save — resume at the next step of the same epoch.
+            start_epoch = saved_epoch
+            start_step = saved_step + 1
+        print(
+            f"[resume] epoch={start_epoch}  step_in_epoch={start_step}  "
+            f"global_step={global_step}  best_macro_f1={best_macro_f1:.4f}"
+        )
+
+    def _save_last(epoch: int, step_in_epoch: int) -> None:
+        torch.save(
+            {
+                "model": model.state_dict(),
+                "config": model.config.__dict__,
+                "vocab_size": tokenizer.vocab_size,
+                "optimizer": optimizer.state_dict(),
+                "scheduler": scheduler.state_dict(),
+                "scaler": scaler.state_dict(),
+                "epoch": epoch,
+                "step_in_epoch": step_in_epoch,
+                "global_step": global_step,
+                "best_macro_f1": best_macro_f1,
+                "history": history,
+            },
+            out_dir / "last.pt",
+        )
+
+    for epoch in range(start_epoch, args.epochs + 1):
         model.train()
         epoch_loss = 0.0
         t0 = time.time()
         optimizer.zero_grad()
+        steps_done_this_epoch = 0
+        skip_until = start_step if epoch == start_epoch else 0
+        if skip_until > 0:
+            print(f"[resume] skipping first {skip_until} steps of epoch {epoch}")
         for step, batch in enumerate(train_loader):
+            if step < skip_until:
+                continue
             batch = {k: v.to(device, non_blocking=True) for k, v in batch.items()}
             with torch.amp.autocast("cuda", enabled=scaler.is_enabled()):
                 logits = model(batch["input_ids"], batch["attention_mask"], batch["pooling_mask"])
@@ -293,33 +338,29 @@ def train(args: argparse.Namespace) -> None:
                 global_step += 1
 
             epoch_loss += loss.item() * args.grad_accum
+            steps_done_this_epoch += 1
+
             if (step + 1) % args.log_every == 0:
-                avg = epoch_loss / (step + 1)
+                avg = epoch_loss / max(1, steps_done_this_epoch)
                 lr = scheduler.get_last_lr()[0]
                 print(
                     f"  epoch {epoch}  step {step + 1}/{len(train_loader)}  "
                     f"loss={avg:.4f}  lr={lr:.2e}"
                 )
+            if args.save_every_steps > 0 and (step + 1) % args.save_every_steps == 0:
+                _save_last(epoch, step)
+                print(f"  [checkpoint] saved at epoch {epoch} step {step + 1}")
 
         print(
             f"[epoch {epoch}] took {time.time() - t0:.1f}s  "
-            f"avg_loss={epoch_loss / max(1, len(train_loader)):.4f}"
+            f"avg_loss={epoch_loss / max(1, steps_done_this_epoch):.4f}"
         )
         eval_results = evaluate(model, val_loader, loss_fn, device)
         print(f"[epoch {epoch}] val:\n{format_eval(eval_results)}")
         history.append({"epoch": epoch, **eval_results})
 
-        # Save last + best
-        torch.save(
-            {
-                "model": model.state_dict(),
-                "config": model.config.__dict__,
-                "vocab_size": tokenizer.vocab_size,
-                "epoch": epoch,
-                "history": history,
-            },
-            out_dir / "last.pt",
-        )
+        # End-of-epoch save: step_in_epoch=-1 signals a clean boundary.
+        _save_last(epoch, -1)
         if eval_results["macro_f1"] > best_macro_f1:
             best_macro_f1 = eval_results["macro_f1"]
             torch.save(
@@ -333,6 +374,9 @@ def train(args: argparse.Namespace) -> None:
                 out_dir / "best.pt",
             )
             print(f"[epoch {epoch}] new best macro_f1={best_macro_f1:.4f} — saved")
+
+        # Reset start_step so subsequent epochs run from the top.
+        start_step = 0
 
     (out_dir / "history.json").write_text(json.dumps(history, indent=2))
     print(f"[done] best macro_f1 = {best_macro_f1:.4f}")
@@ -364,8 +408,16 @@ def build_parser() -> argparse.ArgumentParser:
         "--resume-from",
         type=Path,
         default=None,
-        help="Start from a saved checkpoint (loads model weights only — "
-        "LR schedule and optimizer state are fresh).",
+        help="Resume from a checkpoint. If the ckpt contains optimizer/scheduler "
+        "state (saved by this script after it added mid-epoch checkpointing), "
+        "the full trainer state resumes; otherwise only model weights are loaded.",
+    )
+    p.add_argument(
+        "--save-every-steps",
+        type=int,
+        default=500,
+        help="Save full trainer state (model + optimizer + scheduler + scaler + "
+        "step) every N dataloader steps. Set 0 to save only at epoch boundaries.",
     )
     return p
 
