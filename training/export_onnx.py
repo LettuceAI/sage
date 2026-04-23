@@ -42,26 +42,73 @@ def export_fp32(model: SageModel, tokenizer: SageTokenizer, out: Path, *, opset:
     out.parent.mkdir(parents=True, exist_ok=True)
     dummy = _build_dummy_inputs(tokenizer)
 
-    # Use the legacy tracer-based exporter (dynamo=False). The new dynamo
-    # exporter produces bloated external-data files for custom-code encoders
-    # like Jina v2 and is slower to run at our scale.
-    torch.onnx.export(
-        model,
-        args=(dummy["input_ids"], dummy["attention_mask"], dummy["pooling_mask"]),
-        f=str(out),
-        input_names=INPUT_NAMES,
-        output_names=OUTPUT_NAMES,
-        opset_version=opset,
-        dynamic_axes={
-            "input_ids": {0: "batch"},
-            "attention_mask": {0: "batch"},
-            "pooling_mask": {0: "batch"},
-            "logits": {0: "batch"},
-        },
-        do_constant_folding=True,
-        dynamo=False,
-    )
-    print(f"[export] fp32 ONNX → {out}  ({out.stat().st_size / 1e6:.1f} MB)")
+    # Tracer-based exporter (dynamo=False). At seq=2048 the materialized
+    # ALiBi bias tensors + constant-folded intermediates push the inline
+    # protobuf past the 2 GiB hard limit; export to a temp file and then
+    # re-save with external-data format to keep the weights in a sidecar.
+    import tempfile
+    import onnx
+    from onnx.external_data_helper import convert_model_to_external_data
+
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_path = Path(tmp) / "model.onnx"
+        try:
+            torch.onnx.export(
+                model,
+                args=(dummy["input_ids"], dummy["attention_mask"], dummy["pooling_mask"]),
+                f=str(tmp_path),
+                input_names=INPUT_NAMES,
+                output_names=OUTPUT_NAMES,
+                opset_version=opset,
+                dynamic_axes={
+                    "input_ids": {0: "batch"},
+                    "attention_mask": {0: "batch"},
+                    "pooling_mask": {0: "batch"},
+                    "logits": {0: "batch"},
+                },
+                do_constant_folding=True,
+                dynamo=False,
+            )
+            loaded = onnx.load(str(tmp_path), load_external_data=True)
+        except (RuntimeError, ValueError) as e:
+            if "2GiB" not in str(e) and "2 GiB" not in str(e) and "2GB" not in str(e):
+                raise
+            # Fallback: protobuf itself rejected the inline size. Export with
+            # use_external_data_format so weights stream to sidecar files.
+            torch.onnx.export(
+                model,
+                args=(dummy["input_ids"], dummy["attention_mask"], dummy["pooling_mask"]),
+                f=str(tmp_path),
+                input_names=INPUT_NAMES,
+                output_names=OUTPUT_NAMES,
+                opset_version=opset,
+                dynamic_axes={
+                    "input_ids": {0: "batch"},
+                    "attention_mask": {0: "batch"},
+                    "pooling_mask": {0: "batch"},
+                    "logits": {0: "batch"},
+                },
+                do_constant_folding=True,
+                dynamo=False,
+                use_external_data_format=True,
+            )
+            loaded = onnx.load(str(tmp_path), load_external_data=True)
+
+        # Re-save with external data at the final destination — all weights
+        # go into a single sidecar next to the .onnx graph file.
+        weights_name = out.stem + ".weights.bin"
+        convert_model_to_external_data(
+            loaded,
+            all_tensors_to_one_file=True,
+            location=weights_name,
+            size_threshold=1024,
+        )
+        onnx.save_model(loaded, str(out))
+
+    total_size = out.stat().st_size + (out.parent / weights_name).stat().st_size
+    print(f"[export] fp32 ONNX → {out}  (graph {out.stat().st_size/1e6:.1f} MB + "
+          f"weights {(out.parent/weights_name).stat().st_size/1e6:.1f} MB  "
+          f"= {total_size/1e6:.1f} MB)")
 
 
 def quantize_int8(fp32_path: Path, int8_path: Path) -> None:
