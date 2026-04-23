@@ -73,8 +73,10 @@ def export_fp32(model: SageModel, tokenizer: SageTokenizer, out: Path, *, opset:
         except (RuntimeError, ValueError) as e:
             if "2GiB" not in str(e) and "2 GiB" not in str(e) and "2GB" not in str(e):
                 raise
-            # Fallback: protobuf itself rejected the inline size. Export with
-            # use_external_data_format so weights stream to sidecar files.
+            # Constant folding is materializing ALiBi bias tensors at seq=2048
+            # as multi-gigabyte constants — pushing the graph past 2 GiB during
+            # shape inference. Disable folding; bias is computed at runtime.
+            print("[export] 2GiB limit hit — retrying with do_constant_folding=False")
             torch.onnx.export(
                 model,
                 args=(dummy["input_ids"], dummy["attention_mask"], dummy["pooling_mask"]),
@@ -88,9 +90,8 @@ def export_fp32(model: SageModel, tokenizer: SageTokenizer, out: Path, *, opset:
                     "pooling_mask": {0: "batch"},
                     "logits": {0: "batch"},
                 },
-                do_constant_folding=True,
+                do_constant_folding=False,
                 dynamo=False,
-                use_external_data_format=True,
             )
             loaded = onnx.load(str(tmp_path), load_external_data=True)
 
