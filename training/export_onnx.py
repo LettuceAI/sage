@@ -50,8 +50,10 @@ def export_fp16(model: SageModel, tokenizer: SageTokenizer, out: Path, *, opset:
     out.parent.mkdir(parents=True, exist_ok=True)
     dummy = _build_dummy_inputs(tokenizer)
 
-    # Cast weights + buffers to fp16 so the ONNX graph fits under 2 GiB.
-    # Input ids stay int64 — only float tensors in the model are cast.
+    # Cast weights + buffers to fp16. Input ids stay int64 — only float
+    # tensors get cast. At seq=2048 the graph + ALiBi bias still exceeds
+    # 2 GiB even in fp16, so torch auto-writes external data alongside
+    # the .onnx file when given a real file path (not a handle / BytesIO).
     model_fp16 = model.half()
 
     torch.onnx.export(
@@ -70,7 +72,18 @@ def export_fp16(model: SageModel, tokenizer: SageTokenizer, out: Path, *, opset:
         do_constant_folding=True,
         dynamo=False,
     )
-    print(f"[export] fp16 ONNX → {out}  ({out.stat().st_size / 1e6:.1f} MB)")
+
+    # Report total footprint: graph file + any sidecar data files torch wrote.
+    total = out.stat().st_size
+    sidecars = [p for p in out.parent.iterdir()
+                if p.name != out.name and p.stat().st_mtime >= out.stat().st_mtime - 5]
+    for p in sidecars:
+        total += p.stat().st_size
+    if sidecars:
+        print(f"[export] fp16 ONNX → {out}  (graph {out.stat().st_size/1e6:.1f} MB + "
+              f"{len(sidecars)} sidecar file(s), total {total/1e6:.1f} MB)")
+    else:
+        print(f"[export] fp16 ONNX → {out}  ({out.stat().st_size/1e6:.1f} MB)")
 
 
 def quantize_int8(fp16_path: Path, int8_path: Path) -> None:
