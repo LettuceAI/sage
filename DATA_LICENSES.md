@@ -1,128 +1,70 @@
 # Training data licenses
 
-SAGE is trained on seven publicly available datasets. All sources are under **commercially-permissive licenses** and none require gated access. This document records license terms, attribution, and the per-source **observation coverage** that the training pipeline relies on for partial-signal handling.
-
-The SAGE code is licensed under Apache 2.0. The SAGE model weights — because they are trained on datasets under mixed licenses — carry the **most restrictive obligations of the constituent datasets**, which in practice amounts to: attribution (CC-BY-4.0), attribution under ODC-BY, and inheritance of CC-BY-SA-3.0 on any redistributed underlying text. Redistributing the model weights is permitted; redistributing raw training data is not handled here.
-
----
+Seven sources. All permit commercial use and public model release. Attribution obligations carry through to released model weights.
 
 ## Observation coverage
 
-Each source labels only a subset of SAGE's seven categories. The training pipeline records per-example observation masks so the classifier never learns a false "negative" for a category a source did not examine. The table below summarises each source's claimed coverage.
+Per-example `observed_mask` records which categories a source actually labels. The trainer masks loss on unobserved positions to prevent partial-coverage sources from contaminating other heads.
 
 | Source | Observed categories |
 |---|---|
 | Civil Comments | harassment, violence, hate_speech, nsfw |
 | Measuring Hate Speech | hate_speech |
 | Salad-Data | all seven |
-| ProsocialDialog (prosocial replies) | all seven (as negatives) |
-| Anthropic HH-RLHF red-team | per-row, from tag |
-| Aegis (Safe rows) | all seven |
-| Aegis (harm rows) | the flagged subcategories only |
-| WildChat-1M | all seven (OpenAI Moderation covers every category) |
+| ProsocialDialog | all seven (as negatives) |
+| Anthropic HH-RLHF red-team | per row, from tag |
+| NVIDIA Aegis (Safe rows) | all seven |
+| NVIDIA Aegis (harm rows) | flagged subcategory only |
+| WildChat-1M | all seven (via OpenAI Moderation scores) |
 
----
+## Sources
 
-## 1. Civil Comments
+### Civil Comments
+- `google/civil_comments` — CC0 1.0
+- 1.8M comments with toxicity, severe_toxicity, obscene, threat, insult, identity_attack, sexual_explicit
+- Borkan et al., 2019 — [arXiv:1903.04561](https://arxiv.org/abs/1903.04561)
 
-- **Source:** [huggingface.co/datasets/google/civil_comments](https://huggingface.co/datasets/google/civil_comments)
-- **License:** CC0 1.0
-- **Commercial use:** Allowed
-- **Attribution:** Not required (CC0), but we credit Civil Comments / Google Jigsaw
-- **Categories used:** toxicity, severe_toxicity, obscene, threat, insult, identity_attack, sexual_explicit
-- **Citation:** Borkan et al., 2019 — [arXiv:1903.04561](https://arxiv.org/abs/1903.04561)
+### Measuring Hate Speech
+- `ucberkeley-dlab/measuring-hate-speech` — CC-BY-4.0
+- Kennedy et al., 2020 — [arXiv:2009.10277](https://arxiv.org/abs/2009.10277)
 
-## 2. Measuring Hate Speech
+### Salad-Data
+- `OpenSafetyLab/Salad-Data` — Apache 2.0
+- Hierarchical taxonomy across sexual, violence, hate, self-harm, child abuse, and others
 
-- **Source:** [huggingface.co/datasets/ucberkeley-dlab/measuring-hate-speech](https://huggingface.co/datasets/ucberkeley-dlab/measuring-hate-speech)
-- **License:** CC-BY-4.0
-- **Commercial use:** Allowed (with attribution)
-- **Attribution required:** D-Lab, UC Berkeley
-- **Citation:**
-  ```
-  Kennedy, C.J., Bacon, G., Sahn, A., & von Vacano, C. (2020).
-  Constructing interval variables via faceted Rasch measurement and multitask deep learning:
-  a hate speech application. arXiv:2009.10277.
-  ```
+### ProsocialDialog
+- `allenai/prosocial-dialog` — CC-BY-4.0
+- Prosocial responses used as all-category negatives
+- Kim et al., 2022 — EMNLP
 
-## 3. Salad-Data
+### Anthropic HH-RLHF (red-team subset)
+- `Anthropic/hh-rlhf`, `red-team-attempts/` only — MIT
+- Tag-based labels; rows without mapped tags are dropped
 
-- **Source:** [huggingface.co/datasets/OpenSafetyLab/Salad-Data](https://huggingface.co/datasets/OpenSafetyLab/Salad-Data)
-- **License:** Apache 2.0
-- **Commercial use:** Allowed
-- **Attribution:** OpenSafetyLab
-- **Categories used:** Adult Content, Hate Speech & Discrimination, Child Abuse, Illegal activity subsets
+### NVIDIA Aegis
+- `nvidia/Aegis-AI-Content-Safety-Dataset-1.0` — CC-BY-4.0
+- Includes a dedicated `Sexual Minor` label
+- Ghosh et al., 2024
 
-## 4. ProsocialDialog
+### WildChat-1M
+- `allenai/WildChat-1M` — ODC-BY (cleaned release is not gated)
+- Per-turn OpenAI Moderation and Detoxify scores
+- Zhao et al., 2024 — ICLR
 
-- **Source:** [huggingface.co/datasets/allenai/prosocial-dialog](https://huggingface.co/datasets/allenai/prosocial-dialog)
-- **License:** CC-BY-4.0
-- **Commercial use:** Allowed (with attribution)
-- **Attribution required:** Allen Institute for AI
-- **Role in SAGE:** Primary source of **hard negatives** — prosocial responses to difficult prompts teach the model what is *not* a violation.
-- **Citation:**
-  ```
-  Kim, H., Yu, Y., Jiang, L., Lu, X., Khashabi, D., Kim, G., Choi, Y., & Sap, M. (2022).
-  ProsocialDialog: A Prosocial Backbone for Conversational Agents. EMNLP 2022.
-  ```
+## Excluded
 
-## 5. Anthropic HH-RLHF (red-team subset)
-
-- **Source:** [huggingface.co/datasets/Anthropic/hh-rlhf](https://huggingface.co/datasets/Anthropic/hh-rlhf)
-- **License:** MIT
-- **Commercial use:** Allowed
-- **Attribution:** Anthropic
-- **Subset used:** `red-team-attempts/` only — diverse adversarial prompts across harm categories
-- **Note:** The upstream authors advise against training **dialogue agents** on the harmlessness preference data. SAGE is a **classifier**, not a dialogue agent; the red-team prompts are used only as labeled harmful examples for supervised classification.
-
-## 6. NVIDIA Aegis Content Safety Dataset
-
-- **Source:** [huggingface.co/datasets/nvidia/Aegis-AI-Content-Safety-Dataset-1.0](https://huggingface.co/datasets/nvidia/Aegis-AI-Content-Safety-Dataset-1.0)
-- **License:** CC-BY-4.0
-- **Commercial use:** ✅ Allowed (with attribution)
-- **Gated:** No
-- **Attribution required:** NVIDIA
-- **Size:** ~12k labeled prompts/responses across 13 harm subcategories
-- **Role in SAGE:** Provides reliable cross-category negatives from "Safe" rows and subcategory-labelled positives. Uniquely includes a dedicated ``Sexual Minor`` label that fills the largest gap in SAGE's taxonomy.
-- **Citation:**
-  ```
-  Ghosh, S., Varshney, P., Galinkin, E., & Parisien, C. (2024).
-  AEGIS: Online Adaptive AI Content Safety Moderation with Ensemble of LLM Experts.
-  ```
-
-## 7. WildChat-1M (AI2)
-
-- **Source:** [huggingface.co/datasets/allenai/WildChat-1M](https://huggingface.co/datasets/allenai/WildChat-1M)
-- **License:** ODC-BY (Open Data Commons Attribution)
-- **Commercial use:** ✅ Allowed (with attribution)
-- **Gated:** No (the ``WildChat-1M`` cleaned release is public; ``WildChat-1M-Full`` is the gated variant — we do not use it)
-- **Attribution required:** Allen Institute for AI
-- **Size:** ~838k real LLM conversations with per-turn OpenAI Moderation + Detoxify scores
-- **Role in SAGE:** Scale and realism. Natural multi-turn chat data with OpenAI Moderation labels that cover every SAGE category 1:1. User turns are emitted as single-turn Examples; future iterations may emit full trajectories.
-- **Citation:**
-  ```
-  Zhao, W., Ren, X., Hessel, J., Cardie, C., Choi, Y., & Deng, Y. (2024).
-  WildChat: 1M ChatGPT Interaction Logs in the Wild. ICLR 2024.
-  ```
-
----
-
-## Datasets explicitly excluded
-
-These were evaluated and rejected for SAGE v1:
-
-| Dataset | License | Reason |
-|---|---|---|
-| PKU-Alignment/BeaverTails | CC-BY-NC-4.0 | Non-commercial only |
-| lmsys/toxic-chat | CC-BY-NC-4.0 | Non-commercial only |
-| allenai/wildguardmix | ODC-BY (gated) | Gated behind AI2 Responsible Use acceptance; replaced by Aegis + WildChat |
-| microsoft/toxigen | Access-form gated | Form-gated, license terms unclear for commercial use |
-| google/jigsaw_toxicity_pred | CC0 | Legacy loading-script-only on HF; unsupported by modern `datasets`. Civil Comments covers the same taxonomy with more data |
-
----
+| Dataset | Reason |
+|---|---|
+| `PKU-Alignment/BeaverTails` | CC-BY-NC-4.0 (non-commercial) |
+| `lmsys/toxic-chat` | CC-BY-NC-4.0 (non-commercial) |
+| `allenai/wildguardmix` | Gated behind Responsible Use Guidelines |
+| `microsoft/toxigen` | Form-gated, unclear commercial terms |
+| `google/jigsaw_toxicity_pred` | Script-based loader, unsupported by modern `datasets` |
 
 ## Synthetic augmentation
 
-Rare categories (self_harm, grooming) are augmented with synthetic examples generated by larger LLMs and human-reviewed before inclusion. Synthetic examples are generated and owned by LettuceAI and released under Apache 2.0 alongside the SAGE model.
+Rare categories (`grooming`, `self_harm`) are augmented with LLM-generated conversations that pass through a human-review gate before merging. `sexual_minors` is augmented with negatives only — no synthetic positives by policy. Raw synthetic data is not released; model weights trained on it are Apache 2.0.
 
-**`sexual_minors` is a zero-tolerance category.** We do **not** generate synthetic positive examples for it. Positive signal comes only from the Salad-Data child-safety subset. Synthetic augmentation for this category is limited to **hard negatives** (e.g. non-sexual references to minors) to reduce false positives.
+## Effective obligations on model weights
+
+Most restrictive constituent license is CC-BY-SA (via Wikipedia attribution in Civil Comments' upstream). In practice: attribution to the constituent datasets, patent grant under Apache 2.0 on the code.

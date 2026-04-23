@@ -1,16 +1,4 @@
-"""SAGE training loop.
-
-Usage::
-
-    python -m training.train \
-        --train data/processed/train.jsonl \
-        --val   data/processed/val.jsonl \
-        --out   checkpoints/sage-v1 \
-        --epochs 3 --batch-size 32
-
-Defaults match ``docs/architecture.md`` §5 (layer-wise LR decay, fp16 mixed
-precision, BCE + focal on rare classes, early stop on macro-F1).
-"""
+"""Training loop: layer-wise LR decay, focal BCE with observation mask, fp16."""
 
 from __future__ import annotations
 

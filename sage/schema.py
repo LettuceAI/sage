@@ -1,8 +1,4 @@
-"""Canonical 7-label schema for SAGE.
-
-All training data — regardless of source — is mapped into this schema.
-Per-dataset mappings live in ``training/data/mappings.py``.
-"""
+"""Seven-category multi-label schema."""
 
 from __future__ import annotations
 
@@ -28,43 +24,16 @@ INDEX_TO_LABEL: dict[int, Category] = {i: c for i, c in enumerate(CATEGORIES)}
 
 @dataclass(frozen=True)
 class CategoryConfig:
-    """Per-category inference config.
-
-    ``threshold`` is the score above which ``flagged`` flips to True.
-    Rare/high-cost categories use lower thresholds.
-    """
-
     threshold: float
     description: str
 
 
 DEFAULT_THRESHOLDS: dict[Category, CategoryConfig] = {
-    Category.NSFW: CategoryConfig(
-        threshold=0.60,
-        description="Explicit sexual content between adults.",
-    ),
-    Category.VIOLENCE: CategoryConfig(
-        threshold=0.55,
-        description="Graphic violence, gore, or threats of physical harm.",
-    ),
-    Category.HARASSMENT: CategoryConfig(
-        threshold=0.55,
-        description="Personal attacks, insults, targeted intimidation.",
-    ),
-    Category.HATE_SPEECH: CategoryConfig(
-        threshold=0.50,
-        description="Attacks or slurs targeting protected classes.",
-    ),
-    Category.SELF_HARM: CategoryConfig(
-        threshold=0.40,
-        description="Content promoting, encouraging, or describing self-harm or suicide.",
-    ),
-    Category.GROOMING: CategoryConfig(
-        threshold=0.35,
-        description="Behavioral patterns indicative of grooming a minor.",
-    ),
-    Category.SEXUAL_MINORS: CategoryConfig(
-        threshold=0.25,
-        description="Sexual content depicting minors. Zero-tolerance category.",
-    ),
+    Category.NSFW: CategoryConfig(0.60, "Explicit sexual content between adults."),
+    Category.VIOLENCE: CategoryConfig(0.55, "Graphic violence, gore, or threats."),
+    Category.HARASSMENT: CategoryConfig(0.55, "Personal attacks, insults, targeted intimidation."),
+    Category.HATE_SPEECH: CategoryConfig(0.50, "Attacks on protected classes."),
+    Category.SELF_HARM: CategoryConfig(0.40, "Content promoting or describing self-harm."),
+    Category.GROOMING: CategoryConfig(0.35, "Grooming patterns toward a minor."),
+    Category.SEXUAL_MINORS: CategoryConfig(0.25, "Sexual content involving minors."),
 }

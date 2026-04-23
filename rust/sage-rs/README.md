@@ -1,6 +1,6 @@
 # sage (Rust)
 
-Rust inference crate for the [SAGE](https://github.com/LettuceAI/sage) content moderation model.
+Rust inference crate for the [SAGE](https://github.com/MegalithOfficial/sage) content moderation model.
 
 - Loads an ONNX SAGE model + HuggingFace tokenizer
 - Encodes trajectory-aware conversation inputs

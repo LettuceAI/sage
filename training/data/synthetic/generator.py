@@ -1,9 +1,4 @@
-"""LLM backends for synthetic trajectory generation.
-
-Implementations should keep the interface narrow — a single ``generate`` that
-takes a system prompt and a user prompt and returns a text completion. The
-builder layer above handles structure, retries, and parsing.
-"""
+"""LLM backends for synthesis. Each exposes a single ``generate(system, user, ...)``."""
 
 from __future__ import annotations
 
@@ -26,16 +21,8 @@ class Generator(ABC):
     ) -> str: ...
 
 
-# ---------------------------------------------------------------------------
-# Anthropic — primary backend
-# ---------------------------------------------------------------------------
 class AnthropicGenerator(Generator):
-    """Uses the Anthropic Messages API. Expects ``ANTHROPIC_API_KEY`` in env.
-
-    Defaults to Claude Opus for quality — synthetic trajectory data is
-    generated once and reviewed by a human, so the per-sample cost is
-    amortized across all future training runs. Caller may override the model.
-    """
+    """Anthropic Messages API backend. Requires ANTHROPIC_API_KEY."""
 
     def __init__(
         self,
@@ -68,7 +55,6 @@ class AnthropicGenerator(Generator):
             system=system,
             messages=[{"role": "user", "content": user}],
         )
-        # messages API returns a list of content blocks; concatenate any text parts
         parts: list[str] = []
         for block in resp.content:
             if getattr(block, "type", None) == "text":
@@ -76,12 +62,8 @@ class AnthropicGenerator(Generator):
         return "".join(parts)
 
 
-# ---------------------------------------------------------------------------
-# Ollama — local fallback
-# ---------------------------------------------------------------------------
 class OllamaGenerator(Generator):
-    """Local generation via Ollama (http://localhost:11434). Cheaper but
-    quality depends on the model. Good for iterating on prompt structure."""
+    """Ollama HTTP backend (default http://localhost:11434)."""
 
     def __init__(
         self,
@@ -118,13 +100,9 @@ class OllamaGenerator(Generator):
         return resp.json()["message"]["content"]
 
 
-# ---------------------------------------------------------------------------
-# Mock — for tests and offline development
-# ---------------------------------------------------------------------------
 @dataclass
 class MockGenerator(Generator):
-    """Returns canned responses for unit tests. Use ``next_response`` to
-    queue specific completions."""
+    """Returns queued canned responses, for tests."""
 
     responses: list[str]
 
@@ -142,11 +120,7 @@ class MockGenerator(Generator):
 
 
 def json_loads_lenient(text: str) -> Any:
-    """Parse a JSON object/array from a generator output that may be wrapped in
-    markdown code fences or surrounded by prose. Raises ``ValueError`` if no
-    valid JSON is found.
-    """
-    # Strip common markdown code-fence wrappers
+    """Parse JSON from text that may include code fences or surrounding prose."""
     s = text.strip()
     if s.startswith("```"):
         first_nl = s.find("\n")
@@ -155,12 +129,10 @@ def json_loads_lenient(text: str) -> Any:
         if s.endswith("```"):
             s = s[:-3]
     s = s.strip()
-    # Try direct parse first
     try:
         return json.loads(s)
     except json.JSONDecodeError:
         pass
-    # Fall back to scanning for a JSON array or object substring
     for open_char, close_char in (("[", "]"), ("{", "}")):
         start = s.find(open_char)
         end = s.rfind(close_char)

@@ -8,6 +8,6 @@ We pledge to make participation in our community a harassment-free experience fo
 
 ## Enforcement
 
-Instances of abusive, harassing, or otherwise unacceptable behavior may be reported by contacting the project team at conduct@lettuce.ai. All complaints will be reviewed and investigated promptly and fairly.
+Instances of abusive, harassing, or otherwise unacceptable behavior may be reported by opening a private issue via GitHub's security advisory mechanism at <https://github.com/MegalithOfficial/sage/security/advisories/new>. Complaints will be reviewed promptly and fairly.
 
 The full text of the Contributor Covenant 2.1 is available at the link above.

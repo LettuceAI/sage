@@ -1,24 +1,8 @@
-"""Trajectory construction — turn message-level labeled data into multi-turn
-conversations suitable for training a trajectory-aware classifier.
+"""Trajectory augmentation for message-level training data.
 
-Two augmentation strategies are implemented here:
-
-1. **Benign context injection** — prepend realistic harmless chit-chat turns
-   to an existing Example. Labels stay on the target turn, unchanged.
-   Teaches the model to *ignore* irrelevant context and to remain correct at
-   non-trivial sequence lengths.
-
-2. **Hard-negative context** — prepend slightly-edgy-but-fine context to a
-   clean-negative target. Labels stay negative. Teaches the model that
-   preceding turns being mildly toxic does not contaminate the current turn.
-
-High-quality synthetic *adversarial flip* trajectories (grooming escalation,
-self-harm ideation build-up) are generated via LLM in a separate pipeline —
-see ``training/data/synthetic.py`` (task 8). This module deliberately does
-*not* attempt to generate those — they require human review.
-
-This module has **no hard dependency on the ``datasets`` library** so it can
-be used in-memory during training and in unit tests.
+Two augmentations:
+- ``pad_with_benign_context``: adds unrelated prior turns, labels unchanged.
+- ``pad_negative_with_edgy_context``: prepends edgy context to clean negatives.
 """
 
 from __future__ import annotations
@@ -30,11 +14,7 @@ from dataclasses import dataclass
 from sage.conversation import Conversation, Role, Turn
 from training.data.example import Example
 
-# ---------------------------------------------------------------------------
-# Fallback benign chit-chat. Used only when no domain-sampled bank is provided.
-# Deliberately bland and short — the real bank should be sampled from real
-# negative-labeled user data during aggregation for diversity.
-# ---------------------------------------------------------------------------
+# Fallback chit-chat for when no data-sampled bank is provided.
 DEFAULT_BENIGN_BANK_USER: tuple[str, ...] = (
     "Hey, how's it going?",
     "Nice weather today, huh?",
@@ -74,9 +54,6 @@ DEFAULT_BENIGN_BANK_CHAR: tuple[str, ...] = (
 
 @dataclass(slots=True)
 class BenignContextBank:
-    """Pool of known-clean messages, split by role. Used to synthesize
-    realistic benign context turns."""
-
     user: list[str]
     char: list[str]
 
@@ -98,11 +75,7 @@ class BenignContextBank:
         max_per_role: int = 5000,
         max_chars: int = 200,
     ) -> BenignContextBank:
-        """Harvest benign turns from already-loaded Examples.
-
-        Only pure-negative examples (is_negative()) are eligible; texts longer
-        than ``max_chars`` are skipped to keep padded context cheap to tokenize.
-        """
+        """Sample benign turns from negative Examples; falls back to defaults."""
         user: list[str] = list(DEFAULT_BENIGN_BANK_USER)
         char: list[str] = list(DEFAULT_BENIGN_BANK_CHAR)
         for ex in examples:
@@ -123,29 +96,15 @@ class BenignContextBank:
         return cls(user=user, char=char)
 
 
-# ---------------------------------------------------------------------------
-# Context sequence construction
-# ---------------------------------------------------------------------------
 def _alternating_roles_ending_before(target_role: Role, n: int) -> list[Role]:
-    """Build a realistic n-turn role pattern that would naturally precede a
-    turn of ``target_role``.
-
-    Conversations tend to alternate user↔char. If the target is USER, the turn
-    immediately before it is usually CHAR. If the target is CHAR, the turn
-    before is usually USER. SYSTEM turns (if any) are handled separately as a
-    pinned first turn — not included here.
-    """
+    """n roles alternating user/char, ending opposite to target_role."""
     if n <= 0:
         return []
-    # The role immediately preceding the target is the opposite role.
-    preceding = Role.CHAR if target_role is Role.USER else Role.USER
-    # Walk backwards alternating.
+    current = Role.CHAR if target_role is Role.USER else Role.USER
     roles: list[Role] = []
-    current = preceding
     for _ in range(n):
         roles.append(current)
         current = Role.USER if current is Role.CHAR else Role.CHAR
-    # We built them back-to-front; reverse so they're in conversation order.
     roles.reverse()
     return roles
 
@@ -157,8 +116,6 @@ def build_benign_context(
     rng: random.Random,
     with_system_prompt: bool = False,
 ) -> list[Turn]:
-    """Generate ``n_turns`` of alternating user/char benign context preceding a
-    target of ``target_role``. Optionally prefix with a generic system prompt."""
     context: list[Turn] = []
     if with_system_prompt:
         context.append(
@@ -173,9 +130,6 @@ def build_benign_context(
     return context
 
 
-# ---------------------------------------------------------------------------
-# Example-level augmentations
-# ---------------------------------------------------------------------------
 def pad_with_benign_context(
     example: Example,
     bank: BenignContextBank,
@@ -183,14 +137,7 @@ def pad_with_benign_context(
     n_turns: int | None = None,
     with_system_prompt_prob: float = 0.15,
 ) -> Example:
-    """Prepend benign context to ``example``'s single-turn conversation.
-
-    Labels are preserved unchanged — the added context is irrelevant, the
-    target turn's label is still correct.
-
-    Raises ``ValueError`` if the example already has multi-turn context
-    (don't double-pad; call on single-turn Examples only).
-    """
+    """Prepend benign context to a single-turn Example. Labels unchanged."""
     if not example.conversation.is_single_message():
         raise ValueError("pad_with_benign_context expects a single-turn Example")
     n = n_turns if n_turns is not None else rng.randint(1, 6)
@@ -218,13 +165,7 @@ def pad_negative_with_edgy_context(
     rng: random.Random,
     n_turns: int | None = None,
 ) -> Example:
-    """Hard-negative augmentation: prepend a mix of edgy-but-not-violation
-    context turns to a *pure-negative* target.
-
-    This specifically teaches the model that preceding context being heated or
-    suggestive does **not** automatically flag the current message. Only
-    applies when the target is already a clean negative.
-    """
+    """Prepend edgy-but-not-violation context to a pure-negative target."""
     if not example.is_negative():
         raise ValueError(
             "pad_negative_with_edgy_context should only be applied to clean-negative targets"
@@ -234,14 +175,10 @@ def pad_negative_with_edgy_context(
     n = n_turns if n_turns is not None else rng.randint(2, 5)
     target = example.target_turn
     roles = _alternating_roles_ending_before(target.role, n)
-    # Mix ~50% edgy, 50% bank-sampled benign — realistic conversations are
-    # mostly benign even when one turn was toxic.
     context: list[Turn] = []
     for role in roles:
         if edgy_examples and rng.random() < 0.5:
-            edgy = rng.choice(edgy_examples)
-            # Only use the text; role is driven by the slot we're filling.
-            context.append(Turn(role=role, text=edgy.text))
+            context.append(Turn(role=role, text=rng.choice(edgy_examples).text))
         else:
             context.append(Turn(role=role, text=bank.sample(role, rng)))
     return Example(
@@ -253,20 +190,11 @@ def pad_negative_with_edgy_context(
     )
 
 
-# ---------------------------------------------------------------------------
-# Stream-level orchestration
-# ---------------------------------------------------------------------------
 @dataclass(slots=True)
 class TrajectoryConfig:
     benign_pad_prob: float = 0.6
-    """Probability that a positive example gets benign context padding."""
-
     edgy_neg_pad_prob: float = 0.25
-    """Probability that a pure-negative example gets edgy-context augmentation."""
-
     preserve_original_prob: float = 0.4
-    """Probability of also emitting the unmodified original example."""
-
     seed: int = 42
 
 
@@ -275,20 +203,12 @@ def trajectorize(
     config: TrajectoryConfig | None = None,
     bank: BenignContextBank | None = None,
 ) -> Iterator[Example]:
-    """Augment a stream of single-turn Examples into a mix of single- and
-    multi-turn Examples. The output size is approximately
-    ``(preserve_original_prob + benign_pad_prob_or_edgy_prob) × input_size``.
-    """
+    """Emit a mix of original + augmented Examples; multi-turn inputs pass through."""
     cfg = config or TrajectoryConfig()
     rng = random.Random(cfg.seed)
 
-    # Materialize an edgy pool lazily from the input. We keep it modest to
-    # avoid holding the whole corpus.
     pooled: list[Example] = []
     edgy_pool: list[Example] = []
-    # Two-pass: first pass collects, second pass augments. This is simpler
-    # than a streaming solution and datasets fit comfortably in RAM at our
-    # scale (< 10M examples).
     for ex in examples:
         pooled.append(ex)
         if not ex.is_negative() and len(edgy_pool) < 20_000:
@@ -298,7 +218,6 @@ def trajectorize(
         bank = BenignContextBank.from_examples(pooled)
 
     for ex in pooled:
-        # Multi-turn inputs (e.g. synthetic escalation chains) pass through.
         if not ex.conversation.is_single_message():
             yield ex
             continue

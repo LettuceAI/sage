@@ -1,31 +1,4 @@
-"""Aggregate all six source datasets into unified train/val/test JSONL files.
-
-Usage::
-
-    python -m training.data.aggregate --out data/processed --sources all
-
-Writes:
-    data/processed/train.jsonl
-    data/processed/val.jsonl
-    data/processed/test.jsonl
-    data/processed/stats.json
-
-Each JSONL line::
-
-    {
-        "conversation": {"turns": [{"role": "user", "text": "..."}]},
-        "labels": {"nsfw": 0.0, ...},
-        "source": "civil_comments"
-    }
-
-The ``conversation`` field is always a full ``Conversation`` object — for
-message-level sources this is a 1-turn conversation; multi-turn trajectories
-are emitted by the synthetic/trajectory pipelines (see
-``training/data/trajectory.py``).
-
-Deduplication: exact + near-duplicate (normalized whitespace, lowercased)
-hashes across the entire pooled corpus.
-"""
+"""Aggregate source loaders into train/val/test JSONL splits."""
 
 from __future__ import annotations
 

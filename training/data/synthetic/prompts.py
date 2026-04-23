@@ -1,18 +1,4 @@
-"""Prompts used to drive synthetic trajectory generation.
-
-Each prompt is designed to produce **diverse, realistic training data for a
-safety classifier** — not to be used for any other purpose. The system prompt
-clearly frames the task and the structure required so the LLM produces
-well-formed JSON that the builder can parse directly.
-
-Prompts are kept in a single module so prompt engineering can be iterated
-without touching generator or builder code.
-
-All category prompts share a common **output contract** enforced via the
-``OUTPUT_CONTRACT`` block below. Each generator call's user prompt is the
-category-specific instructions immediately followed by the contract, so the
-structure requirement is the last thing the model sees before generating.
-"""
+"""Synthesis prompts. All share a common OUTPUT_CONTRACT appended per call."""
 
 from __future__ import annotations
 

@@ -1,14 +1,4 @@
-"""Export a trained SAGE checkpoint to ONNX, then INT8-quantize, with a
-parity check against the PyTorch model.
-
-Usage::
-
-    python -m training.export_onnx \
-        --checkpoint checkpoints/sage-v1/best.pt \
-        --out-fp32 artifacts/sage-v1-fp32.onnx \
-        --out-int8 artifacts/sage-v1-int8.onnx \
-        --opset 17
-"""
+"""Export SAGE checkpoint to ONNX fp32 + INT8 with PyTorch parity check."""
 
 from __future__ import annotations
 

@@ -17,9 +17,7 @@ class _SageForTests(Sage):
     """Skip __init__ — lets us exercise helpers without needing an ONNX model."""
 
     def __init__(self, thresholds=None):  # noqa: D401
-        self._thresholds = {
-            c: DEFAULT_THRESHOLDS[c].threshold for c in CATEGORIES
-        }
+        self._thresholds = {c: DEFAULT_THRESHOLDS[c].threshold for c in CATEGORIES}
         if thresholds:
             self._thresholds.update(thresholds)
         # tokenizer and _session intentionally unset
@@ -89,6 +87,7 @@ def test_merge_max_rejects_empty():
 @dataclass
 class _StubTokenizer:
     """Minimal stand-in for SageTokenizer exposing just what _target_budget uses."""
+
     max_length: int
     # nested stub representing the HF tokenizer
     tokenizer: object

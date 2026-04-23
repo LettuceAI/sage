@@ -1,114 +1,77 @@
 # Data pipeline
 
-`sage` trains on an aggregated corpus drawn from six openly-licensed sources, with programmatic trajectory augmentation and an LLM-driven synthesis step for rare categories. This document describes each stage.
-
-## Overview
+Four stages:
 
 ```
-six HF datasets
-      │
-      ▼
-training.data.aggregate       ── produce train/val/test JSONL + stats
-      │
-      ▼
-training.data.trajectorize_cli   ── wrap messages as conversations, add context
-      │
-      ▼
-training.data.synthetic.cli      ── LLM-generated grooming / self-harm
-      │                              trajectories → human review → merge
-      ▼
-training.train                   ── tokenize, train, checkpoint
+sources → aggregate → trajectorize → train
 ```
 
-## 1. Source aggregation
-
-`training/data/loaders.py` defines one loader per source. Each yields `Example` objects tagged with `source` and a partial label map over the canonical 7-category schema.
-
-| Source | Role in `sage` |
-|---|---|
-| Jigsaw Toxic Comments | Harassment, hate speech, violence (threats) |
-| Civil Comments | Harassment, hate speech, violence, NSFW (sexual explicit) |
-| Measuring Hate Speech | Hate speech (expert-annotated) |
-| Salad-Data | NSFW, violence, self-harm, grooming, sexual minors |
-| ProsocialDialog | Hard negatives (prosocial responses) |
-| Anthropic HH-RLHF (red-team) | Diverse adversarial prompts across categories |
-
-The aggregator CLI deduplicates across sources (SHA-1 fingerprint of normalized text) and emits three split files.
+## 1. Aggregate
 
 ```bash
 python -m training.data.aggregate \
-    --out data/processed \
-    --sources all \
-    --limit-per-source 1000
+  --out data/processed \
+  --sources all \
+  --limit-per-source 50000
 ```
 
-Produces:
-
-```
-data/processed/train.jsonl
-data/processed/val.jsonl
-data/processed/test.jsonl
-data/processed/stats.json
-```
-
-Each line is:
+Writes `train.jsonl`, `val.jsonl`, `test.jsonl`, `stats.json`. Each line:
 
 ```json
 {
   "conversation": {"turns": [{"role": "user", "text": "..."}]},
   "labels": {"nsfw": 0.0, "harassment": 0.8, ...},
+  "observed": ["harassment", "hate_speech", "nsfw", "violence"],
   "source": "civil_comments"
 }
 ```
 
-## 2. Trajectory augmentation
+Deduplication: SHA-1 of normalized (whitespace-collapsed, lowercased) text.
 
-Source data is message-level. The trajectory augmenter wraps each `Example` as a one-turn conversation and probabilistically injects synthetic context:
-
-- **Benign context padding.** Prepends unrelated user/character turns to a labeled target. Labels are preserved. Teaches the model to ignore irrelevant context.
-- **Edgy-context hard negatives.** Prepends mildly toxic context to a clean-negative target. Label stays negative. Teaches the model that a toxic prior turn does not contaminate the current turn's classification.
+## 2. Trajectorize
 
 ```bash
-python -m training.data.trajectorize_cli \
-    --in  data/processed/train.jsonl \
-    --out data/processed/train.traj.jsonl \
-    --benign-pad-prob 0.6 \
-    --edgy-neg-pad-prob 0.25 \
-    --preserve-original-prob 0.4
+for s in train val test; do
+  python -m training.data.trajectorize_cli \
+    --in  data/processed/$s.jsonl \
+    --out data/processed/$s.traj.jsonl
+done
 ```
 
-Run per-split (train, val, test separately) so augmentation cannot leak the same target across splits.
+Applies two augmentations to single-turn examples:
+- Benign context padding (context unrelated to label)
+- Edgy-context padding on negatives (teaches model not to propagate prior toxicity)
 
-## 3. Synthetic generation (rare categories)
+Always preserves the original; augmentations are additive.
 
-Public datasets cover grooming and self-harm only sparsely. Trajectory-level detection in particular requires labeled escalation chains, which do not exist in bulk. The synthetic pipeline generates candidate trajectories via an LLM, holds them in a `pending/` directory, and merges only reviewer-approved examples into training data.
+Run per split to prevent target leakage across splits.
+
+## 3. Synthetic data (rare categories)
+
+Self-harm, grooming, and sexual-minors (negatives only) are augmented via LLM generation with human review.
 
 ```bash
-# 1. Generate
+# Generate pending
 python -m training.data.synthetic.cli generate \
-    --backend anthropic \
-    --category grooming --polarity positive --n 50 \
-    --out data/synthetic/pending/grooming_pos.jsonl
+  --backend anthropic \
+  --category grooming --polarity positive --n 500 \
+  --out data/synthetic/pending/grooming_pos.jsonl
 
-# 2. Human review — open each file and flip meta.review_status to
-#    "approved" or "rejected" per line. Edit text where needed.
+# Human review: edit each row's meta.review_status to "approved" or "rejected"
+# (or run scripts/review_server.py for a web UI)
 
-# 3. Merge approved rows into training-ready JSONL
+# Merge approved rows
 python -m training.data.synthetic.cli merge \
-    --in "data/synthetic/pending/*.jsonl" \
-    --out data/processed/synthetic.jsonl
-
-# 4. Concatenate with the main training set before trajectorization
-cat data/processed/synthetic.jsonl >> data/processed/train.jsonl
+  --in "data/synthetic/pending/*.jsonl" \
+  --out data/processed/synthetic.jsonl
 ```
 
-### Policy
+`sexual_minors` is negatives-only by policy. See `training/data/synthetic/prompts.py`.
 
-- **Sexual content involving minors** — the synthesis pipeline produces **only hard negatives** for this category (e.g. non-sexual references to young people). Positive signal for this category comes solely from the Salad-Data child-safety subset.
-- **All synthetic output** is written with `meta.review_status = "pending"`. The merge CLI rejects anything not explicitly approved by a reviewer.
+## 4. Train
 
-See [`training/data/synthetic/prompts.py`](../training/data/synthetic/prompts.py) for the full prompt text.
+See [`training.md`](training.md).
 
-## 4. Statistics
+## Observation coverage
 
-The aggregator and trajectorizer both emit per-source and per-category counts in `stats.json`. Inspect these before training — rare positives (< a few thousand instances) are likely to underfit and may benefit from targeted synthesis.
+Sources label different subsets of the 7 categories. Each example carries an `observed` list; the trainer masks loss on unobserved positions. Per-source coverage table lives in [`DATA_LICENSES.md`](../DATA_LICENSES.md).

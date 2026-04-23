@@ -1,9 +1,4 @@
-"""Torch ``Dataset`` that reads SAGE JSONL and encodes on demand via
-``SageTokenizer``.
-
-Cheap memory footprint: only the parsed JSON rows are kept in RAM; tokenization
-runs per batch. Use ``num_workers>=2`` on the DataLoader to parallelize encode.
-"""
+"""Torch Dataset backed by SAGE JSONL; tokenization happens per item."""
 
 from __future__ import annotations
 

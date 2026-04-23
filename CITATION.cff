@@ -1,15 +1,14 @@
 cff-version: 1.2.0
-title: "sage: trajectory-aware content moderation"
+title: "sage: multi-label content moderation"
 message: "If you use sage in academic work, please cite it as below."
 type: software
 authors:
-  - name: "LettuceAI"
-    website: "https://github.com/LettuceAI"
-repository-code: "https://github.com/LettuceAI/sage"
+  - name: "MegalithOfficial"
+    website: "https://github.com/MegalithOfficial"
+repository-code: "https://github.com/MegalithOfficial/sage"
 license: Apache-2.0
 keywords:
   - content-moderation
   - nlp
   - multi-label-classification
-  - trajectory-aware
   - onnx

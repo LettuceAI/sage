@@ -1,12 +1,4 @@
-"""Conversation data model for SAGE.
-
-A ``Conversation`` is the canonical input to the model: a non-empty ordered
-list of ``Turn``s. The **last** turn is always the one being classified; the
-rendering layer tags it with the ``[CURRENT]`` marker regardless of its natural
-role.
-
-See ``docs/architecture.md`` §1 for the full input format spec.
-"""
+"""Conversation input types."""
 
 from __future__ import annotations
 
@@ -21,15 +13,12 @@ class Role(str, Enum):
     SYSTEM = "system"
 
 
-# Special tokens added to the tokenizer. The first three are natural roles; the
-# fourth is applied at render time to mark the classification target.
 ROLE_TOKEN: dict[Role, str] = {
     Role.USER: "[USER]",
     Role.CHAR: "[CHAR]",
     Role.SYSTEM: "[SYSTEM]",
 }
 CURRENT_TOKEN = "[CURRENT]"
-
 SPECIAL_TOKENS: tuple[str, ...] = (
     ROLE_TOKEN[Role.USER],
     ROLE_TOKEN[Role.CHAR],
@@ -40,13 +29,6 @@ SPECIAL_TOKENS: tuple[str, ...] = (
 
 @dataclass(slots=True, frozen=True)
 class Turn:
-    """A single conversation turn.
-
-    The role is the turn's *natural* role (who actually said it). The
-    ``[CURRENT]`` marker is applied at render time to the final turn regardless
-    of role, so the natural role is preserved here for filtering and analytics.
-    """
-
     role: Role
     text: str
 
@@ -60,8 +42,6 @@ class Turn:
 
 @dataclass(slots=True)
 class Conversation:
-    """Ordered list of turns. The last turn is always the classification target."""
-
     turns: list[Turn]
 
     def __post_init__(self) -> None:
@@ -81,8 +61,6 @@ class Conversation:
 
     @classmethod
     def from_text(cls, text: str, role: Role = Role.USER) -> Conversation:
-        """Wrap a single message as a 1-turn conversation. Preserves backward
-        compatibility with message-level data sources."""
         return cls(turns=[Turn(role=role, text=text)])
 
     @classmethod
@@ -98,8 +76,7 @@ class Conversation:
 
 
 def render_for_debug(conv: Conversation) -> str:
-    """Human-readable linearization, matching the token stream shape shown in
-    the architecture doc. Used for logging and eyeballing — not for training."""
+    """Linearize to the token-stream shape for logging."""
     parts: list[str] = ["[CLS]"]
     for turn in conv.context:
         parts.append(f"{ROLE_TOKEN[turn.role]} {turn.text} [SEP]")

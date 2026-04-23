@@ -1,14 +1,4 @@
-"""Dataset loaders. Each loader yields ``Example`` objects with labels mapped
-into SAGE's canonical 7-category schema.
-
-Each source declares a module-level ``OBSERVED`` constant — the set of
-categories that source actually labels. The trainer masks loss on unobserved
-categories so sources that cover only a subset of the taxonomy do not
-contaminate the other heads with spurious negatives.
-
-Load lazily — none of these import ``datasets`` at module level so unit tests
-can import ``loaders`` without the optional training dependency.
-"""
+"""Per-source loaders. Each yields Examples with labels + observed categories."""
 
 from __future__ import annotations
 
@@ -29,12 +19,7 @@ def _load_hf(name: str, split: str, **kwargs) -> Dataset:
     return load_dataset(name, split=split, **kwargs)
 
 
-# ---------------------------------------------------------------------------
-# 1. Civil Comments
-#    Columns: text, toxicity, severe_toxicity, obscene, threat, insult,
-#             identity_attack, sexual_explicit (all float ∈ [0, 1])
-#    License: CC0
-# ---------------------------------------------------------------------------
+# civil_comments — google/civil_comments, CC0. harassment/violence/hate/nsfw.
 CIVIL_COMMENTS_OBSERVED: frozenset[Category] = frozenset(
     {Category.HARASSMENT, Category.VIOLENCE, Category.HATE_SPEECH, Category.NSFW}
 )
@@ -61,17 +46,8 @@ def load_civil_comments(split: str = "train", min_score: float = 0.3) -> Iterato
         )
 
 
-# ---------------------------------------------------------------------------
-# 3. Measuring Hate Speech (UC Berkeley)
-#    Columns: text, hate_speech_score (continuous, ≈[-8, +4])
-#    License: CC-BY-4.0
-#
-#    Annotators scored hate speech only. The other six SAGE categories are
-#    unobserved — never inferred from a low ``hate_speech_score``.
-#
-#    Middle-range scores are dropped: crowd-annotated boundary cases produce
-#    more label noise than signal for a classifier head.
-# ---------------------------------------------------------------------------
+# measuring_hate_speech — ucberkeley-dlab/measuring-hate-speech, CC-BY-4.0.
+# Labels hate_speech only; middle-range scores dropped as noise.
 MHS_OBSERVED: frozenset[Category] = frozenset({Category.HATE_SPEECH})
 
 
@@ -103,21 +79,9 @@ def load_measuring_hate_speech(
         )
 
 
-# ---------------------------------------------------------------------------
-# 4. Salad-Data (OpenSafetyLab)
-#    License: Apache 2.0
-#
-#    Salad is a broad safety dataset. Rows whose 1/2/3-category tag matches
-#    our taxonomy emit a positive label. Rows whose tags do not match any of
-#    our categories are skipped rather than emitted as silent all-negatives.
-# ---------------------------------------------------------------------------
+# salad_data — OpenSafetyLab/Salad-Data, Apache 2.0. Broad taxonomy.
 SALAD_OBSERVED: frozenset[Category] = ALL_CATEGORIES
 
-# Salad uses code-prefixed labels like "O1: Hate Speech" / "O62: Self-Harm".
-# Ordered substring matching — more specific categories must come first so
-# SEXUAL_MINORS-adjacent tags don't get siphoned into the generic NSFW bucket.
-# Mappings cover only labels that cleanly fit SAGE's seven categories; tags
-# outside SAGE's scope (fraud, theft, misinformation, etc.) are not mapped.
 SALAD_TAXONOMY_SUBSTR: tuple[tuple[str, Category], ...] = (
     # Sexual content involving minors / grooming — route narrow, specific tags
     # to GROOMING since Salad's "Child Abuse" is broad behavioral harm. We do
@@ -184,13 +148,7 @@ def load_salad_data(subset: str = "base_set") -> Iterator[Example]:
         )
 
 
-# ---------------------------------------------------------------------------
-# 5. ProsocialDialog — HARD NEGATIVES across all categories
-#    License: CC-BY-4.0
-#
-#    Prosocial replies are, by construction, free of all seven harms — full
-#    observation across the taxonomy is appropriate here.
-# ---------------------------------------------------------------------------
+# prosocial_dialog — allenai/prosocial-dialog, CC-BY-4.0. All-category negatives.
 PROSOCIAL_OBSERVED: frozenset[Category] = ALL_CATEGORIES
 
 
@@ -207,14 +165,7 @@ def load_prosocial_dialog(split: str = "train") -> Iterator[Example]:
         )
 
 
-# ---------------------------------------------------------------------------
-# 6. Anthropic HH-RLHF — red-team subset
-#    License: MIT
-#
-#    Observed is per-row, derived from the ``tags`` field. Transcripts without
-#    any mapped harm tag are skipped (we cannot assert what kind of harm they
-#    are, and they are not reliable negatives since the dataset is harm-seeded).
-# ---------------------------------------------------------------------------
+# hh_rlhf_redteam — Anthropic/hh-rlhf red-team subset, MIT. Tag-based labels.
 HH_TAG_MAP: dict[str, Category] = {
     "violence": Category.VIOLENCE,
     "weapons": Category.VIOLENCE,
@@ -251,19 +202,8 @@ def load_hh_rlhf_redteam() -> Iterator[Example]:
         )
 
 
-# ---------------------------------------------------------------------------
-# 7. NVIDIA Aegis Content Safety Dataset
-#    License: CC-BY-4.0 (not gated)
-#
-#    Aegis is a purpose-built safety classifier training set spanning 13 harm
-#    subcategories. The "Safe" verdict is the one signal we trust to provide
-#    reliable cross-category negatives — those rows carry all seven SAGE
-#    categories as observed. Harm rows carry only the subcategories that
-#    were explicitly flagged.
-#
-#    Aegis is uniquely valuable because it has a dedicated ``Sexual Minor``
-#    label, which fills the largest data gap in SAGE's taxonomy.
-# ---------------------------------------------------------------------------
+# aegis — nvidia/Aegis-AI-Content-Safety-Dataset-1.0, CC-BY-4.0.
+# Broad taxonomy including a dedicated Sexual Minor label.
 AEGIS_CATEGORY_MAP: dict[str, Category] = {
     "hate/identity hate": Category.HATE_SPEECH,
     "hate": Category.HATE_SPEECH,
@@ -357,16 +297,7 @@ def load_aegis(split: str = "train") -> Iterator[Example]:
             )
 
 
-# ---------------------------------------------------------------------------
-# 8. WildChat-1M (AI2) — real LLM chat logs with OpenAI moderation labels
-#    License: ODC-BY (cleaned version is NOT gated)
-#
-#    Each turn carries an OpenAI Moderation API score vector. We treat those
-#    scores as full-coverage labels (OpenAI Moderation covers every SAGE
-#    category). For v1 we emit one Example per USER turn — assistant turns
-#    can be added later as CHAR-role examples when we start classifying
-#    model outputs.
-# ---------------------------------------------------------------------------
+# wildchat — allenai/WildChat-1M, ODC-BY. Per-turn OpenAI Moderation labels.
 WILDCHAT_OPENAI_MAP: dict[str, Category] = {
     "harassment": Category.HARASSMENT,
     "harassment/threatening": Category.HARASSMENT,
@@ -439,9 +370,7 @@ def load_wildchat(split: str = "train") -> Iterator[Example]:
             )
 
 
-# ---------------------------------------------------------------------------
-# Registry — used by aggregate.py
-# ---------------------------------------------------------------------------
+# Registry
 LOADERS = {
     "civil_comments": load_civil_comments,
     "measuring_hate_speech": load_measuring_hate_speech,

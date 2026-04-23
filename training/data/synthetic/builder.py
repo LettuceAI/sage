@@ -1,8 +1,4 @@
-"""Orchestrate synthetic trajectory generation.
-
-The builder turns a ``Generator`` and a category request into validated
-``Example`` objects, each tagged as synthetic and pending human review.
-"""
+"""SyntheticBuilder: Generator + category → pending Examples for human review."""
 
 from __future__ import annotations
 
@@ -30,12 +26,7 @@ class SyntheticBatch:
 
 
 class SyntheticBuilder:
-    """Generate synthetic training trajectories via an LLM ``Generator``.
-
-    Outputs are **always** tagged with ``meta["review_status"] = "pending"``.
-    They MUST NOT be merged into training data until a human reviewer flips
-    that to ``"approved"`` — the merge CLI enforces this.
-    """
+    """Emits Examples with ``meta.review_status = "pending"``. Merge CLI enforces review."""
 
     def __init__(self, generator: Generator, system_prompt: str | None = None) -> None:
         self.generator = generator
@@ -51,14 +42,7 @@ class SyntheticBuilder:
         max_tokens: int = 4096,
         temperature: float = 0.9,
     ) -> SyntheticBatch:
-        """Generate ``n`` examples of ``(category, polarity)``.
-
-        ``polarity`` ∈ ``{"positive", "negative"}``. Positive means the label
-        should be set for ``category``; negative means the label is 0.
-
-        Raises ``ValueError`` for the policy-forbidden case of
-        ``(category="sexual_minors", polarity="positive")``.
-        """
+        """Generate ``n`` examples with polarity ∈ {positive, negative}."""
         if category not in CATEGORY_PROMPTS:
             raise ValueError(f"unknown category for synthesis: {category!r}")
         pos_prompt, neg_prompt = CATEGORY_PROMPTS[category]
@@ -104,9 +88,6 @@ class SyntheticBuilder:
 
         return batch
 
-    # ------------------------------------------------------------------
-    # Convenience wrappers
-    # ------------------------------------------------------------------
     def grooming_positives(self, n: int, **kw) -> SyntheticBatch:
         return self.build("grooming", "positive", n, **kw)
 
@@ -122,9 +103,6 @@ class SyntheticBuilder:
     def minors_negatives(self, n: int, **kw) -> SyntheticBatch:
         return self.build("sexual_minors", "negative", n, **kw)
 
-    # ------------------------------------------------------------------
-    # Internals
-    # ------------------------------------------------------------------
     @staticmethod
     def _row_to_example(row: dict, *, category: str, polarity: str) -> Example:
         turns_raw = row["turns"]
@@ -157,41 +135,56 @@ class SyntheticBuilder:
         )
 
 
-# ---------------------------------------------------------------------------
-# Role normalization — LLM generators frequently invent domain-specific role
-# names ("therapist", "doctor", "student") instead of using our schema. We map
-# common aliases to our three canonical roles and fall back to alternating
-# user/char for anything truly unknown.
-# ---------------------------------------------------------------------------
+# LLM-generated role strings get normalized to one of user/char/system.
+# Unknown values alternate based on turn position.
 _ROLE_ALIASES: dict[str, Role] = {
-    # User-side: humans / patients / students / children
-    "user": Role.USER, "human": Role.USER, "person": Role.USER,
-    "student": Role.USER, "patient": Role.USER, "client": Role.USER,
-    "child": Role.USER, "kid": Role.USER, "teen": Role.USER,
-    "teenager": Role.USER, "minor": Role.USER, "youth": Role.USER,
-    "son": Role.USER, "daughter": Role.USER,
-    "nephew": Role.USER, "niece": Role.USER,
-    # Char-side: authority / adult / assistant / caregiver
-    "char": Role.CHAR, "character": Role.CHAR, "assistant": Role.CHAR,
-    "bot": Role.CHAR, "therapist": Role.CHAR, "doctor": Role.CHAR,
-    "teacher": Role.CHAR, "tutor": Role.CHAR, "coach": Role.CHAR,
-    "librarian": Role.CHAR, "nurse": Role.CHAR, "counselor": Role.CHAR,
-    "parent": Role.CHAR, "mother": Role.CHAR, "father": Role.CHAR,
-    "mom": Role.CHAR, "dad": Role.CHAR, "mentor": Role.CHAR,
-    "adult": Role.CHAR, "professional": Role.CHAR, "friend": Role.CHAR,
+    "user": Role.USER,
+    "human": Role.USER,
+    "person": Role.USER,
+    "student": Role.USER,
+    "patient": Role.USER,
+    "client": Role.USER,
+    "child": Role.USER,
+    "kid": Role.USER,
+    "teen": Role.USER,
+    "teenager": Role.USER,
+    "minor": Role.USER,
+    "youth": Role.USER,
+    "son": Role.USER,
+    "daughter": Role.USER,
+    "nephew": Role.USER,
+    "niece": Role.USER,
+    "char": Role.CHAR,
+    "character": Role.CHAR,
+    "assistant": Role.CHAR,
+    "bot": Role.CHAR,
+    "therapist": Role.CHAR,
+    "doctor": Role.CHAR,
+    "teacher": Role.CHAR,
+    "tutor": Role.CHAR,
+    "coach": Role.CHAR,
+    "librarian": Role.CHAR,
+    "nurse": Role.CHAR,
+    "counselor": Role.CHAR,
+    "parent": Role.CHAR,
+    "mother": Role.CHAR,
+    "father": Role.CHAR,
+    "mom": Role.CHAR,
+    "dad": Role.CHAR,
+    "mentor": Role.CHAR,
+    "adult": Role.CHAR,
+    "professional": Role.CHAR,
+    "friend": Role.CHAR,
     # System / narration
-    "system": Role.SYSTEM, "narrator": Role.SYSTEM,
-    "instruction": Role.SYSTEM, "context": Role.SYSTEM, "setting": Role.SYSTEM,
+    "system": Role.SYSTEM,
+    "narrator": Role.SYSTEM,
+    "instruction": Role.SYSTEM,
+    "context": Role.SYSTEM,
+    "setting": Role.SYSTEM,
 }
 
 
 def _normalize_role(raw: str, prev_role: Role | None) -> Role:
-    """Map LLM-generated role strings to SAGE's three canonical roles.
-
-    Known aliases (see ``_ROLE_ALIASES``) map directly. Unknown strings
-    alternate based on the preceding turn's role — mimicking natural
-    conversation alternation — with USER as the default when no prev exists.
-    """
     s = str(raw).strip().lower()
     if s in _ROLE_ALIASES:
         return _ROLE_ALIASES[s]
@@ -203,7 +196,6 @@ def _normalize_role(raw: str, prev_role: Role | None) -> Role:
 
 
 def iter_examples_for_review(batch: SyntheticBatch) -> Iterable[Example]:
-    """Filter helper — used by the review CLI."""
     for ex in batch.examples:
         if ex.meta.get("review_status") == "pending":
             yield ex

@@ -1,31 +1,8 @@
 # ruff: noqa: E501
-"""Minimal web UI for human-reviewing synthesis JSONL files.
+"""Web UI for reviewing synthesis JSONL files.
 
-Two review modes:
-
-1. **Manual** — read every row, press A/R/S. Slow but maximum control.
-2. **Verify auto-review** — click "Auto-review" in the sidebar. Heuristics
-   mark near-duplicates, refusal artifacts, wrong-length rows, and
-   unsafe content as ``rejected`` with a ``rejection_reasons`` list.
-   Switch the filter to "rejected" and walk only those rows; press A to
-   override any that should have been approved. Pending rows that look
-   fine are auto-approved in the same pass.
-
-Keyboard shortcuts
-    A — approve (overrides rejection)
-    R — reject
-    S — skip (leave pending, advance)
-    J — previous
-    K — next
-    G — jump to next pending / rejected (depends on filter)
-    F — cycle filter: all → pending → rejected → approved → all
-
-Single-user tool. No auth. Don't expose to the public internet.
-
-Usage::
-
-    python scripts/review_server.py
-    python scripts/review_server.py --root data/synthetic/pending --port 8765
+Keys: A approve · R reject · S skip · J/K navigate · G next in filter · F cycle filter.
+Single-user. No auth. Bind to localhost only.
 """
 
 from __future__ import annotations
@@ -51,29 +28,38 @@ FILE_LOCK = threading.Lock()
 # Auto-review heuristics
 # ---------------------------------------------------------------------------
 REFUSAL_PATTERNS = re.compile(
-    "|".join([
-        r"\bi cannot help (you|with)\b",
-        r"\bi can't help (you|with)\b",
-        r"\bi cannot assist\b",
-        r"\bi can't assist\b",
-        r"\bas an ai\b",
-        r"\bi'm not able to (help|assist|generate)\b",
-        r"\bi am unable to\b",
-        r"\bi will not (generate|produce|create)\b",
-        r"\bi'm sorry,? but i (cannot|can't|won't|am)\b",
-        r"\bi apologize,? but\b",
-        r"\bi refuse to\b",
-        r"\bagainst my guidelines\b",
-        r"\bagainst openai\b",
-    ]),
+    "|".join(
+        [
+            r"\bi cannot help (you|with)\b",
+            r"\bi can't help (you|with)\b",
+            r"\bi cannot assist\b",
+            r"\bi can't assist\b",
+            r"\bas an ai\b",
+            r"\bi'm not able to (help|assist|generate)\b",
+            r"\bi am unable to\b",
+            r"\bi will not (generate|produce|create)\b",
+            r"\bi'm sorry,? but i (cannot|can't|won't|am)\b",
+            r"\bi apologize,? but\b",
+            r"\bi refuse to\b",
+            r"\bagainst my guidelines\b",
+            r"\bagainst openai\b",
+        ]
+    ),
     re.IGNORECASE,
 )
 
 SAFETY_GATE_PATTERNS = [
     # Explicit-in-isolation terms that should never appear in our synthesis.
     # The grooming prompt explicitly says "subtle in context", never explicit.
-    "penis", "vagina", "blowjob", "masturbat",
-    "undress", "naked pic", "nude pic", "sexting", "send nudes",
+    "penis",
+    "vagina",
+    "blowjob",
+    "masturbat",
+    "undress",
+    "naked pic",
+    "nude pic",
+    "sexting",
+    "send nudes",
 ]
 
 
@@ -90,7 +76,8 @@ def auto_review(rows: list[dict], max_per_cluster: int = 3) -> dict:
     """
     # Identify pending rows we're about to decide on.
     pending_indices = [
-        i for i, r in enumerate(rows)
+        i
+        for i, r in enumerate(rows)
         if (r.get("meta") or {}).get("review_status", "pending") == "pending"
     ]
 

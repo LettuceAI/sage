@@ -9,8 +9,8 @@ description = "Lightweight multi-label content moderation model for chat and rol
 readme = "README.md"
 license = { file = "LICENSE" }
 requires-python = ">=3.10"
-authors = [{ name = "LettuceAI" }]
-keywords = ["content-moderation", "nlp", "minilm", "onnx", "safety"]
+authors = [{ name = "MegalithOfficial" }]
+keywords = ["content-moderation", "nlp", "onnx", "safety"]
 classifiers = [
     "Development Status :: 2 - Pre-Alpha",
     "Intended Audience :: Developers",
@@ -52,9 +52,9 @@ review = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/LettuceAI/sage"
-Repository = "https://github.com/LettuceAI/sage"
-Issues = "https://github.com/LettuceAI/sage/issues"
+Homepage = "https://github.com/MegalithOfficial/sage"
+Repository = "https://github.com/MegalithOfficial/sage"
+Issues = "https://github.com/MegalithOfficial/sage/issues"
 
 [tool.hatch.build.targets.wheel]
 packages = ["sage"]

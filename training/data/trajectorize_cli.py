@@ -1,14 +1,4 @@
-"""CLI: augment an aggregated JSONL into a trajectory-enriched JSONL.
-
-Usage::
-
-    python -m training.data.trajectorize_cli \
-        --in data/processed/train.jsonl \
-        --out data/processed/train.traj.jsonl
-
-Designed to be run *per split* (train/val/test separately) so that synthetic
-augmentation can never leak the same target across splits.
-"""
+"""Augment an aggregated JSONL with trajectory context. Run per split."""
 
 from __future__ import annotations
 

@@ -1,21 +1,4 @@
-"""Evaluate a trained SAGE checkpoint on a curated set of single-message cases.
-
-Usage::
-
-    python scripts/test_single_message.py --checkpoint checkpoints/sage-v1/best.pt
-    python scripts/test_single_message.py --checkpoint checkpoints/sage-v1/best.pt --cpu
-
-Runs on CPU by default to avoid fighting the GPU training process. Pass
-``--cuda`` if the GPU is free.
-
-The suite is organised into four sections:
-    - easy positives    (model should clearly flag the labelled category)
-    - easy negatives    (model should be clean — all categories ~0)
-    - hard negatives    (tricky texts that LOOK bad but aren't)
-    - hard positives    (subtle or adversarial violations)
-
-Output reports per-case pass/fail plus a summary.
-"""
+"""Curated single-message smoke test for a SAGE checkpoint."""
 
 from __future__ import annotations
 

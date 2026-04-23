@@ -1,29 +1,4 @@
-"""CLI for synthetic trajectory generation and human review.
-
-Two-step workflow:
-
-1. **Generate**::
-
-       python -m training.data.synthetic.cli generate \
-           --category grooming --polarity positive --n 50 \
-           --out data/synthetic/pending/grooming_pos.jsonl
-
-   Produces a JSONL file with ``meta.review_status = "pending"`` on every row.
-
-2. **Human review**: a human edits the file, flipping ``review_status`` to
-   ``"approved"`` or ``"rejected"`` per row. They may also tweak the text or
-   labels to correct generator mistakes.
-
-3. **Merge**::
-
-       python -m training.data.synthetic.cli merge \
-           --in data/synthetic/pending/*.jsonl \
-           --out data/processed/synthetic.jsonl
-
-   Picks up only ``review_status == "approved"`` rows and emits them in the
-   same JSONL shape as the aggregator output, ready to concatenate with the
-   main training set.
-"""
+"""Synthesis CLI: ``generate`` pending JSONL, human review, ``merge`` approved."""
 
 from __future__ import annotations
 
